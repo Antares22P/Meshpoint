@@ -2,797 +2,1014 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Meshpoint — Group Live Location</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ORBIT — Live Group Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg-deep:#060a12;
-    --bg-panel: rgba(16,22,34,0.74);
-    --bg-panel-solid:#0c1220;
-    --border: rgba(255,255,255,0.09);
-    --border-soft: rgba(255,255,255,0.05);
-    --amber:#ffb454;
-    --amber-dim: rgba(255,180,84,0.18);
-    --teal:#5eead4;
-    --teal-dim: rgba(94,234,212,0.16);
-    --text:#e8edf5;
-    --text-dim:#8592a6;
-    --text-faint:#546076;
-    --stale:#ff6b6b;
-    --online:#4ade80;
-    --radius-lg:18px;
-    --radius-md:12px;
-    --radius-sm:8px;
-    --shadow-lift: 0 8px 30px rgba(0,0,0,0.45);
+    --bg:#070a12;
+    --bg-2:#0b1020;
+    --surface: rgba(16,22,38,.68);
+    --surface-solid:#111729;
+    --border: rgba(140,160,200,.14);
+    --border-soft: rgba(140,160,200,.08);
+    --text:#e9edf5;
+    --muted:#7c8aa3;
+    --muted-2:#525f78;
+    --cyan:#00e5ff;
+    --violet:#7c5cff;
+    --danger:#ff4d6d;
+    --success:#3ee6a8;
+    --amber:#ffb703;
+    --radius:18px;
+    --radius-sm:12px;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{height:100%; width:100%; overflow:hidden;}
-  body{
-    background:var(--bg-deep);
+  html,body{
+    height:100%; width:100%; overflow:hidden;
+    background:var(--bg);
+    font-family:'Space Grotesk',sans-serif;
     color:var(--text);
-    font-family:'Inter', sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  .display{font-family:'Space Grotesk', sans-serif;}
-  .mono{font-family:'JetBrains Mono', monospace;}
-  ::selection{background:var(--amber-dim); color:var(--amber);}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  #map{position:absolute; inset:0; z-index:0; background:#0b0f1a;}
 
-  /* ---------- background ambience ---------- */
-  #stars{
-    position:fixed; inset:0; z-index:0; pointer-events:none;
-    background:
-      radial-gradient(1200px 700px at 15% 10%, rgba(94,234,212,0.05), transparent 60%),
-      radial-gradient(1000px 800px at 85% 90%, rgba(255,180,84,0.05), transparent 60%);
+  /* ---------- leaflet overrides ---------- */
+  .leaflet-control-attribution{
+    background:rgba(7,10,18,.55) !important; color:var(--muted-2) !important;
+    font-family:'JetBrains Mono',monospace; font-size:9px !important; backdrop-filter:blur(6px);
+  }
+  .leaflet-control-attribution a{color:var(--muted) !important;}
+  .leaflet-control-zoom{display:none;}
+  .leaflet-tile-pane{filter:saturate(1.05) brightness(0.95);}
+
+  /* ---------- glass panel base ---------- */
+  .glass{
+    background:var(--surface);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border:1px solid var(--border);
+    box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.03);
   }
 
-  /* ================= JOIN SCREEN ================= */
-  #join-screen{
-    position:fixed; inset:0; z-index:10;
+  /* ================= ONBOARDING ================= */
+  #onboarding{
+    position:fixed; inset:0; z-index:1000;
     display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(1200px 700px at 15% 10%, rgba(124,92,255,.14), transparent 60%),
+      radial-gradient(1000px 700px at 90% 90%, rgba(0,229,255,.10), transparent 55%),
+      var(--bg);
     padding:24px;
   }
-  .join-card{
-    position:relative;
-    width:100%; max-width:420px;
-    background:var(--bg-panel);
-    border:1px solid var(--border);
-    border-radius:var(--radius-lg);
-    padding:34px 30px 28px;
-    backdrop-filter: blur(20px);
-    box-shadow:var(--shadow-lift);
-    animation: rise .5s ease;
+  #onboarding.hidden{display:none;}
+  .onb-bg-grid{
+    position:absolute; inset:0; opacity:.35; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(140,160,200,.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(140,160,200,.06) 1px, transparent 1px);
+    background-size:42px 42px;
+    mask-image: radial-gradient(circle at 50% 40%, black, transparent 75%);
   }
-  @keyframes rise{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);} }
+  .onb-card{
+    position:relative; width:100%; max-width:460px;
+    border-radius:24px; padding:36px 32px 28px;
+    animation: cardIn .5s cubic-bezier(.2,.9,.25,1);
+  }
+  @keyframes cardIn{ from{opacity:0; transform:translateY(18px) scale(.98);} to{opacity:1; transform:none;} }
 
-  .logo-mark{
-    width:64px; height:64px; margin:0 auto 18px;
-    position:relative;
-    border-radius:50%;
-    background:radial-gradient(circle at 50% 50%, rgba(255,180,84,0.12), transparent 70%);
+  .brand{display:flex; align-items:center; gap:12px; margin-bottom:26px;}
+  .brand-mark{
+    width:38px; height:38px; border-radius:11px; position:relative; flex:none;
+    background:conic-gradient(from 220deg, var(--cyan), var(--violet), var(--cyan));
     display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 24px rgba(0,229,255,.35);
   }
-  .logo-mark::before{
-    content:''; position:absolute; inset:0; border-radius:50%;
-    border:1px solid var(--border);
+  .brand-mark::after{
+    content:""; position:absolute; inset:3px; border-radius:8px; background:var(--bg-2);
   }
-  .logo-mark::after{
-    content:''; position:absolute; inset:0; border-radius:50%;
-    background: conic-gradient(from 0deg, transparent 0deg, rgba(255,180,84,0.55) 18deg, transparent 40deg);
-    animation: sweep 3.2s linear infinite;
-  }
-  @keyframes sweep{ to{ transform:rotate(360deg); } }
-  .logo-dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); box-shadow:0 0 10px var(--amber); z-index:1; }
+  .brand-mark span{position:relative; width:8px; height:8px; border-radius:50%; background:var(--cyan); box-shadow:0 0 10px var(--cyan);}
+  .brand-name{font-weight:700; font-size:20px; letter-spacing:.5px;}
+  .brand-name em{font-style:normal; color:var(--cyan);}
+  .brand-sub{font-size:11px; color:var(--muted); font-family:'JetBrains Mono',monospace; letter-spacing:.6px; margin-top:1px;}
 
-  .join-card h1{
-    font-size:22px; font-weight:600; text-align:center; letter-spacing:0.2px;
-  }
-  .join-card p.sub{
-    text-align:center; color:var(--text-dim); font-size:13px; margin-top:6px; margin-bottom:26px;
-  }
+  .step-dots{display:flex; gap:6px; margin-bottom:22px;}
+  .step-dots i{flex:1; height:3px; border-radius:3px; background:var(--border-soft); transition:.3s;}
+  .step-dots i.active{background:linear-gradient(90deg,var(--cyan),var(--violet));}
 
-  .field{ margin-bottom:16px; }
-  .field label{
-    display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
-    color:var(--text-faint); margin-bottom:7px; font-weight:600;
-  }
-  .field input[type=text]{
-    width:100%; background:rgba(255,255,255,0.03); border:1px solid var(--border);
-    color:var(--text); padding:12px 14px; border-radius:var(--radius-sm);
-    font-family:'JetBrains Mono', monospace; font-size:14px; letter-spacing:0.4px;
-    outline:none; transition:border-color .15s, background .15s;
-  }
-  .field input[type=text]:focus{ border-color:rgba(255,180,84,0.5); background:rgba(255,255,255,0.05); }
-  .field input[type=text]::placeholder{ color:var(--text-faint); font-family:'Inter', sans-serif; }
+  .tabrow{display:flex; gap:8px; margin-bottom:22px; background:rgba(255,255,255,.03); padding:4px; border-radius:12px; border:1px solid var(--border-soft);}
+  .tabbtn{flex:1; padding:9px 0; text-align:center; border-radius:9px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:.2s; user-select:none;}
+  .tabbtn.active{background:linear-gradient(135deg, rgba(0,229,255,.15), rgba(124,92,255,.15)); color:var(--text); box-shadow:inset 0 0 0 1px rgba(0,229,255,.25);}
 
-  .row-split{ display:flex; gap:10px; }
-  .row-split .field{ flex:1; }
+  .field{margin-bottom:14px;}
+  .field label{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); margin-bottom:6px; font-family:'JetBrains Mono',monospace; letter-spacing:.4px; text-transform:uppercase;}
+  .field input, .field textarea{
+    width:100%; background:rgba(255,255,255,.035); border:1px solid var(--border);
+    color:var(--text); padding:11px 13px; border-radius:10px; font-size:13.5px;
+    font-family:'JetBrains Mono',monospace; outline:none; transition:.2s;
+  }
+  .field input::placeholder{color:var(--muted-2);}
+  .field input:focus, .field textarea:focus{border-color:var(--cyan); box-shadow:0 0 0 3px rgba(0,229,255,.12);}
+  .field-hint{font-size:10.5px; color:var(--muted-2); margin-top:5px; line-height:1.5;}
+  .field-hint a{color:var(--cyan); text-decoration:none;}
 
-  .avatar-row{ display:flex; align-items:center; gap:12px; }
+  .advanced-toggle{
+    font-size:11.5px; color:var(--muted); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px;
+    margin:4px 0 14px; font-family:'JetBrains Mono',monospace;
+  }
+  .advanced-toggle svg{transition:.25s;}
+  .advanced-toggle.open svg{transform:rotate(90deg);}
+  .advanced-box{display:none; padding-top:2px;}
+  .advanced-box.open{display:block; animation:fadeDown .25s ease;}
+  @keyframes fadeDown{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:none;}}
+
+  .avatar-row{display:flex; align-items:center; gap:14px; margin-bottom:16px;}
   .avatar-preview{
-    width:52px; height:52px; border-radius:50%; flex-shrink:0;
+    width:64px; height:64px; border-radius:50%; flex:none; position:relative;
     display:flex; align-items:center; justify-content:center;
-    font-size:22px; font-weight:600; color:#0a0e16;
-    background-size:cover; background-position:center;
-    border:2px solid var(--border); position:relative;
+    background:linear-gradient(135deg, var(--cyan), var(--violet));
+    font-weight:700; font-size:22px; color:#04121a; overflow:hidden;
+    border:2px solid rgba(255,255,255,.15);
   }
-  .emoji-picker{ display:flex; flex-wrap:wrap; gap:6px; flex:1; }
-  .emoji-opt{
-    width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center;
-    background:rgba(255,255,255,0.03); border:1px solid var(--border-soft); cursor:pointer; font-size:15px;
-    transition:transform .1s, border-color .1s;
+  .avatar-preview img{width:100%; height:100%; object-fit:cover;}
+  .avatar-actions{display:flex; flex-direction:column; gap:8px;}
+  .btn-upload{
+    font-size:12px; padding:8px 14px; border-radius:9px; border:1px solid var(--border);
+    background:rgba(255,255,255,.04); color:var(--text); cursor:pointer; font-family:'JetBrains Mono',monospace;
+    transition:.2s; display:inline-flex; align-items:center; gap:6px; width:fit-content;
   }
-  .emoji-opt:hover{ transform:translateY(-1px); border-color:var(--border); }
-  .emoji-opt.active{ border-color:var(--amber); background:var(--amber-dim); }
-
-  .color-swatches{ display:flex; gap:6px; margin-top:9px; }
-  .swatch{ width:18px; height:18px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
-  .swatch.active{ border-color:#fff; }
-
-  .upload-btn{
-    font-size:11px; color:var(--teal); cursor:pointer; text-decoration:underline; text-underline-offset:2px;
-    background:none; border:none; font-family:'Inter'; padding:0; margin-top:8px; display:inline-block;
-  }
+  .btn-upload:hover{border-color:var(--cyan); color:var(--cyan);}
 
   .btn-primary{
-    width:100%; margin-top:8px; padding:13px; border:none; border-radius:var(--radius-sm);
-    background:linear-gradient(135deg, var(--amber), #ff9d4d); color:#1a1206; font-weight:700; font-size:14px;
-    cursor:pointer; letter-spacing:0.2px; transition:filter .15s, transform .1s;
-    font-family:'Space Grotesk', sans-serif;
+    width:100%; padding:13px; border:none; border-radius:12px; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14.5px; letter-spacing:.2px;
+    background:linear-gradient(135deg, var(--cyan), var(--violet)); color:#04121a;
+    box-shadow:0 8px 26px rgba(0,229,255,.22); transition:.2s; margin-top:6px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
   }
-  .btn-primary:hover{ filter:brightness(1.08); }
-  .btn-primary:active{ transform:scale(0.98); }
-  .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; filter:none; }
-
-  .divider-or{
-    display:flex; align-items:center; gap:10px; margin:18px 0 4px; color:var(--text-faint); font-size:11px;
-    text-transform:uppercase; letter-spacing:0.08em;
+  .btn-primary:hover{transform:translateY(-1px); box-shadow:0 12px 30px rgba(0,229,255,.32);}
+  .btn-primary:disabled{opacity:.5; cursor:not-allowed; transform:none;}
+  .btn-ghost{
+    width:100%; padding:11px; border:1px solid var(--border); border-radius:12px; cursor:pointer;
+    background:transparent; color:var(--muted); font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px;
+    margin-top:8px; transition:.2s;
   }
-  .divider-or::before, .divider-or::after{ content:''; flex:1; height:1px; background:var(--border-soft); }
+  .btn-ghost:hover{color:var(--text); border-color:var(--muted);}
 
-  .status-line{ font-size:12px; color:var(--text-faint); text-align:center; margin-top:14px; min-height:16px; }
-  .status-line.err{ color:var(--stale); }
-  .status-line.ok{ color:var(--online); }
-
-  /* ================= MAP APP ================= */
-  #app-screen{ position:fixed; inset:0; z-index:5; display:none; }
-  #map{ position:absolute; inset:0; }
-
-  .leaflet-control-attribution{
-    background:rgba(6,10,18,0.6) !important; color:var(--text-faint) !important; font-size:9px !important;
+  .err-msg{
+    font-size:12px; color:var(--danger); background:rgba(255,77,109,.09); border:1px solid rgba(255,77,109,.25);
+    padding:9px 11px; border-radius:9px; margin-bottom:12px; display:none;
   }
-  .leaflet-control-attribution a{ color:var(--text-dim) !important; }
-  .leaflet-control-zoom{ display:none; }
+  .err-msg.show{display:block; animation:fadeDown .25s ease;}
+
+  .invite-banner{
+    display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:11px;
+    background:rgba(62,230,168,.08); border:1px solid rgba(62,230,168,.25); margin-bottom:18px; font-size:12px;
+  }
+  .invite-banner .dot{width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 8px var(--success); flex:none;}
+
+  /* spinner */
+  .spinner{width:15px; height:15px; border-radius:50%; border:2px solid rgba(4,18,26,.35); border-top-color:#04121a; animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ================= APP UI ================= */
+  #app{position:fixed; inset:0; z-index:10; pointer-events:none; display:none;}
+  #app.active{display:block;}
 
   #topbar{
     position:absolute; top:16px; left:16px; right:16px; z-index:20;
     display:flex; align-items:center; justify-content:space-between; gap:12px;
-    pointer-events:none;
+    pointer-events:auto;
   }
-  .glass{
-    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius-md);
-    backdrop-filter:blur(16px); box-shadow:var(--shadow-lift);
+  .topbar-left{display:flex; align-items:center; gap:12px; padding:9px 16px 9px 10px; border-radius:16px;}
+  .topbar-left .brand-mark{width:30px; height:30px; border-radius:9px;}
+  .topbar-left .brand-name{font-size:15px;}
+  .group-chip{
+    display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px;
+    color:var(--muted); padding-left:12px; border-left:1px solid var(--border-soft); margin-left:2px;
   }
-  #room-pill{
-    pointer-events:auto; padding:9px 16px; display:flex; align-items:center; gap:10px;
+  .group-chip b{color:var(--cyan); letter-spacing:1px;}
+  .live-pulse{width:7px; height:7px; border-radius:50%; background:var(--success); position:relative; flex:none;}
+  .live-pulse::after{
+    content:""; position:absolute; inset:-4px; border-radius:50%; border:1.5px solid var(--success);
+    animation:pulseRing 1.8s ease-out infinite;
   }
-  #room-pill .rlabel{ font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); font-weight:600; }
-  #room-pill .rcode{ font-family:'JetBrains Mono'; font-size:14px; color:var(--amber); font-weight:600; letter-spacing:1px; }
-  #room-pill button{
-    background:rgba(255,255,255,0.05); border:1px solid var(--border-soft); color:var(--text-dim);
-    font-size:10px; padding:5px 9px; border-radius:6px; cursor:pointer; font-family:'Inter'; font-weight:600;
-  }
-  #room-pill button:hover{ color:var(--text); border-color:var(--border); }
+  @keyframes pulseRing{0%{transform:scale(.5); opacity:1;} 100%{transform:scale(2.2); opacity:0;}}
 
-  #radar-widget{
-    pointer-events:auto; width:44px; height:44px; border-radius:50%; position:relative; overflow:hidden; flex-shrink:0;
-  }
-  #radar-widget::before{
-    content:''; position:absolute; inset:0;
-    background: repeating-radial-gradient(circle, rgba(94,234,212,0.12) 0 1px, transparent 1px 34%);
-  }
-  #radar-widget::after{
-    content:''; position:absolute; inset:0;
-    background: conic-gradient(from 0deg, transparent 0deg, rgba(94,234,212,0.5) 25deg, transparent 55deg);
-    animation: sweep 2.6s linear infinite;
-  }
-
-  #topright{ display:flex; gap:10px; pointer-events:auto; }
   .icon-btn{
-    width:40px; height:40px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center;
-    cursor:pointer; color:var(--text-dim); font-size:16px; transition:color .15s, border-color .15s;
+    width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--muted); transition:.2s; flex:none; border:1px solid var(--border);
+    background:var(--surface); backdrop-filter:blur(18px);
   }
-  .icon-btn:hover{ color:var(--text); border-color:rgba(255,255,255,0.18); }
+  .icon-btn:hover{color:var(--text); border-color:rgba(0,229,255,.35); box-shadow:0 0 0 3px rgba(0,229,255,.08);}
+  .icon-btn.danger:hover{color:var(--danger); border-color:rgba(255,77,109,.4); box-shadow:0 0 0 3px rgba(255,77,109,.1);}
+  .icon-btn.on{color:var(--cyan); border-color:rgba(0,229,255,.4);}
 
-  /* Sidebar */
+  /* sidebar (members) */
   #sidebar{
-    position:absolute; top:76px; right:16px; bottom:16px; width:290px; z-index:20;
-    display:flex; flex-direction:column; overflow:hidden;
+    position:absolute; top:78px; right:16px; bottom:96px; width:296px; z-index:20;
+    border-radius:20px; padding:16px 14px; display:flex; flex-direction:column; pointer-events:auto;
+    transition:.3s cubic-bezier(.2,.9,.25,1);
   }
-  #sidebar-head{
-    padding:14px 16px 12px; border-bottom:1px solid var(--border-soft); flex-shrink:0;
-  }
-  #sidebar-head h2{ font-size:13px; font-weight:600; letter-spacing:0.02em; }
-  #sidebar-head .count{ color:var(--text-faint); font-size:11px; margin-top:2px; }
-  #member-list{ overflow-y:auto; flex:1; padding:8px; }
-  #member-list::-webkit-scrollbar{ width:5px; }
-  #member-list::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.1); border-radius:4px; }
+  #sidebar.collapsed{transform:translateX(340px); opacity:0; pointer-events:none;}
+  .sb-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:0 2px;}
+  .sb-title{font-size:11px; font-weight:700; letter-spacing:1.4px; color:var(--muted); font-family:'JetBrains Mono',monospace; text-transform:uppercase;}
+  .sb-count{font-size:11px; color:var(--cyan); font-family:'JetBrains Mono',monospace; background:rgba(0,229,255,.1); padding:2px 8px; border-radius:20px;}
+  #members-list{overflow-y:auto; display:flex; flex-direction:column; gap:8px; flex:1; padding-right:2px;}
+  #members-list::-webkit-scrollbar{width:4px;}
+  #members-list::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
 
-  .member-row{
-    display:flex; align-items:center; gap:11px; padding:9px 8px; border-radius:var(--radius-sm);
-    cursor:pointer; transition:background .12s; margin-bottom:2px;
+  .member-card{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:13px;
+    background:rgba(255,255,255,.025); border:1px solid var(--border-soft); transition:.2s; position:relative;
+    animation:cardIn .35s ease;
   }
-  .member-row:hover{ background:rgba(255,255,255,0.04); }
+  .member-card:hover{background:rgba(255,255,255,.05); border-color:var(--border);}
+  .member-card.me{border-color:rgba(0,229,255,.3); background:rgba(0,229,255,.05);}
   .m-avatar{
-    width:38px; height:38px; border-radius:50%; flex-shrink:0; position:relative;
-    display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#0a0e16;
-    background-size:cover; background-position:center;
+    width:38px; height:38px; border-radius:50%; flex:none; position:relative;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#04121a;
+    overflow:hidden; border:2px solid var(--ring, var(--cyan));
   }
-  .m-avatar .dot{
+  .m-avatar img{width:100%; height:100%; object-fit:cover;}
+  .m-status{
     position:absolute; bottom:-1px; right:-1px; width:10px; height:10px; border-radius:50%;
-    border:2px solid var(--bg-panel-solid);
+    border:2px solid var(--surface-solid); background:var(--muted-2);
   }
-  .m-avatar .dot.online{ background:var(--online); }
-  .m-avatar .dot.stale{ background:var(--stale); }
-  .m-info{ flex:1; min-width:0; }
-  .m-name{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .m-name .you-tag{ font-size:9px; color:var(--amber); font-weight:600; margin-left:5px; }
-  .m-sub{ font-size:11px; color:var(--text-faint); margin-top:1px; }
-  .m-dist{ text-align:right; flex-shrink:0; }
-  .m-dist .val{ font-family:'JetBrains Mono'; font-size:13px; color:var(--teal); font-weight:600; }
-  .m-dist .lbl{ font-size:9px; color:var(--text-faint); text-transform:uppercase; }
+  .m-status.online{background:var(--success); box-shadow:0 0 6px var(--success);}
+  .m-status.stale{background:var(--amber);}
+  .m-info{flex:1; min-width:0;}
+  .m-name{font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;}
+  .m-name .you-tag{font-size:9px; color:var(--cyan); font-family:'JetBrains Mono',monospace; background:rgba(0,229,255,.12); padding:1px 5px; border-radius:5px; font-weight:600;}
+  .m-meta{font-size:10.5px; color:var(--muted-2); font-family:'JetBrains Mono',monospace; margin-top:1px; display:flex; gap:8px;}
+  .m-dist{text-align:right; flex:none;}
+  .m-dist b{display:block; font-size:13px; font-family:'JetBrains Mono',monospace; color:var(--cyan);}
+  .m-dist span{font-size:9px; color:var(--muted-2); text-transform:uppercase; letter-spacing:.5px;}
 
-  #sidebar-foot{
-    padding:11px 14px; border-top:1px solid var(--border-soft); flex-shrink:0;
-    display:flex; align-items:center; justify-content:space-between;
-  }
-  #unit-toggle{
-    display:flex; background:rgba(255,255,255,0.04); border-radius:7px; padding:2px; gap:2px;
-  }
-  #unit-toggle button{
-    border:none; background:none; color:var(--text-faint); font-size:10px; padding:5px 9px; border-radius:5px;
-    cursor:pointer; font-family:'JetBrains Mono'; font-weight:600;
-  }
-  #unit-toggle button.active{ background:var(--amber-dim); color:var(--amber); }
-  #leave-btn{
-    background:none; border:none; color:var(--stale); font-size:11px; cursor:pointer; font-weight:600; font-family:'Inter';
+  .empty-hint{
+    text-align:center; color:var(--muted-2); font-size:11.5px; padding:30px 10px; font-family:'JetBrains Mono',monospace; line-height:1.7;
   }
 
-  #sidebar-collapse-tab{
-    display:none;
+  /* bottom controls */
+  #controls{
+    position:absolute; bottom:16px; left:50%; transform:translateX(-50%); z-index:20;
+    display:flex; align-items:center; gap:8px; padding:9px; border-radius:20px; pointer-events:auto;
+  }
+  .ctrl-btn{
+    display:flex; align-items:center; gap:7px; padding:10px 15px; border-radius:14px; cursor:pointer;
+    color:var(--muted); font-size:12.5px; font-weight:600; transition:.2s; border:1px solid transparent; user-select:none;
+  }
+  .ctrl-btn:hover{background:rgba(255,255,255,.05); color:var(--text);}
+  .ctrl-btn.primary{background:linear-gradient(135deg, var(--cyan), var(--violet)); color:#04121a;}
+  .ctrl-btn.primary:hover{filter:brightness(1.08);}
+  .ctrl-sep{width:1px; height:22px; background:var(--border);}
+
+  /* invite modal */
+  #invite-modal{
+    position:fixed; inset:0; z-index:1100; display:none; align-items:center; justify-content:center; padding:20px;
+    background:rgba(4,7,14,.6); backdrop-filter:blur(4px);
+  }
+  #invite-modal.show{display:flex;}
+  .modal-card{width:100%; max-width:400px; border-radius:20px; padding:26px;}
+  .modal-card h3{font-size:16px; margin-bottom:4px;}
+  .modal-card p{font-size:12px; color:var(--muted); margin-bottom:18px; line-height:1.5;}
+  .link-box{
+    display:flex; align-items:center; gap:8px; background:rgba(255,255,255,.04); border:1px solid var(--border);
+    border-radius:11px; padding:10px 12px; margin-bottom:12px;
+  }
+  .link-box input{flex:1; background:none; border:none; outline:none; color:var(--muted); font-size:11px; font-family:'JetBrains Mono',monospace;}
+  .copy-btn{
+    background:rgba(0,229,255,.12); color:var(--cyan); border:1px solid rgba(0,229,255,.3); padding:7px 12px;
+    border-radius:8px; font-size:11px; cursor:pointer; font-weight:600; font-family:'JetBrains Mono',monospace; flex:none; transition:.2s;
+  }
+  .copy-btn:hover{background:rgba(0,229,255,.2);}
+  .code-display{
+    text-align:center; font-family:'JetBrains Mono',monospace; font-size:26px; letter-spacing:6px; font-weight:700;
+    color:var(--text); padding:16px; border-radius:13px; background:rgba(124,92,255,.08); border:1px dashed rgba(124,92,255,.35);
+    margin-bottom:14px;
   }
 
-  /* self marker */
-  .self-pulse{
-    width:18px; height:18px; border-radius:50%; background:var(--amber);
-    box-shadow:0 0 0 0 rgba(255,180,84,0.6); border:2px solid #1a1206;
-    animation: pulse-ring 2s infinite;
+  /* toast */
+  #toast-wrap{position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:1200; display:flex; flex-direction:column; gap:8px; pointer-events:none;}
+  .toast{
+    padding:11px 18px; border-radius:12px; font-size:12.5px; font-weight:500; color:var(--text);
+    animation:toastIn .3s ease, toastOut .3s ease 2.7s forwards; box-shadow:0 8px 24px rgba(0,0,0,.4);
   }
-  @keyframes pulse-ring{
-    0%{ box-shadow:0 0 0 0 rgba(255,180,84,0.55); }
-    70%{ box-shadow:0 0 0 16px rgba(255,180,84,0); }
-    100%{ box-shadow:0 0 0 0 rgba(255,180,84,0); }
+  .toast.error{border-color:rgba(255,77,109,.4); background:rgba(30,10,16,.85);}
+  .toast.success{border-color:rgba(62,230,168,.4); background:rgba(8,26,20,.85);}
+  @keyframes toastIn{from{opacity:0; transform:translateY(-12px);} to{opacity:1; transform:none;}}
+  @keyframes toastOut{to{opacity:0; transform:translateY(-10px);}}
+
+  /* map marker styling (injected via divIcon) */
+  .orbit-marker{position:relative; display:flex; align-items:center; justify-content:center;}
+  .orbit-marker .ring{
+    position:absolute; width:100%; height:100%; border-radius:50%; border:2px solid var(--ring,#00e5ff);
+    animation:markerPulse 2.2s ease-out infinite;
   }
-  .marker-avatar{
-    width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:16px; font-weight:700; color:#0a0e16; border:2.5px solid var(--bg-deep);
-    background-size:cover; background-position:center; box-shadow:0 3px 10px rgba(0,0,0,0.5);
+  @keyframes markerPulse{0%{transform:scale(.75); opacity:.9;} 100%{transform:scale(1.9); opacity:0;}}
+  .orbit-marker .avatar{
+    width:40px; height:40px; border-radius:50%; border:2.5px solid var(--ring,#00e5ff);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#04121a;
+    box-shadow:0 4px 16px rgba(0,0,0,.5), 0 0 14px var(--ring-glow, rgba(0,229,255,.5));
+    background:var(--ring,#00e5ff); overflow:hidden; position:relative; z-index:2;
   }
-  .marker-avatar.stale{ opacity:0.45; filter:grayscale(0.6); }
-  .marker-label{
-    font-family:'Inter'; font-size:10.5px; font-weight:600; color:var(--text); white-space:nowrap;
-    background:rgba(6,10,18,0.78); padding:2px 7px; border-radius:5px; margin-top:4px; text-align:center;
-    border:1px solid var(--border-soft);
+  .orbit-marker .avatar img{width:100%; height:100%; object-fit:cover;}
+  .orbit-marker .label{
+    position:absolute; top:46px; left:50%; transform:translateX(-50%); white-space:nowrap;
+    font-size:10px; font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--text);
+    background:rgba(7,10,18,.8); padding:2px 8px; border-radius:7px; border:1px solid var(--border-soft);
+    z-index:2;
   }
-  .dist-label{
-    font-family:'JetBrains Mono'; font-size:10px; font-weight:600; color:var(--teal);
-    background:rgba(6,10,18,0.85); padding:2px 6px; border-radius:5px; border:1px solid rgba(94,234,212,0.25);
-    white-space:nowrap;
+  .dist-chip{
+    background:rgba(7,10,18,.88); border:1px solid rgba(0,229,255,.3); color:var(--cyan);
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; padding:2px 7px; border-radius:8px;
+    white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,.4);
   }
 
-  #toast{
-    position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:30;
-    padding:10px 18px; border-radius:20px; font-size:12.5px; display:none; pointer-events:none;
-  }
-
-  /* Mobile */
-  @media (max-width: 720px){
-    #sidebar{
-      top:auto; left:12px; right:12px; bottom:12px; width:auto; height:44%;
-    }
-    #room-pill .rlabel{ display:none; }
-    #topbar{ left:12px; right:12px; top:12px; }
+  @media (max-width:720px){
+    #sidebar{width:calc(100% - 32px); left:16px; right:16px; top:auto; bottom:92px; height:38vh;}
+    #sidebar.collapsed{transform:translateY(120%);}
+    .topbar-left .brand-sub, .group-chip{display:none;}
+    #controls{gap:4px; padding:7px; max-width:calc(100% - 24px); overflow-x:auto;}
+    .ctrl-btn span.lbl{display:none;}
   }
 </style>
 </head>
 <body>
-<div id="stars"></div>
 
-<!-- ===================== JOIN SCREEN ===================== -->
-<div id="join-screen">
-  <div class="join-card">
-    <div class="logo-mark"><div class="logo-dot"></div></div>
-    <h1 class="display">Meshpoint</h1>
-    <p class="sub">Live group location, shared in real time</p>
+<div id="map"></div>
 
-    <div class="field">
-      <label>Room code</label>
-      <div class="row-split">
-        <input type="text" id="room-input" placeholder="e.g. FALCON-42" maxlength="16" autocomplete="off">
+<!-- ============ ONBOARDING ============ -->
+<div id="onboarding">
+  <div class="onb-bg-grid"></div>
+  <div class="onb-card glass" id="onb-card">
+
+    <div class="brand">
+      <div class="brand-mark"><span></span></div>
+      <div>
+        <div class="brand-name">ORBIT<em>·</em></div>
+        <div class="brand-sub">LIVE GROUP TRACKING</div>
       </div>
     </div>
 
-    <div class="field">
-      <label>Your name</label>
-      <input type="text" id="name-input" placeholder="How others will see you" maxlength="20" autocomplete="off">
+    <div class="step-dots"><i class="active" id="dot1"></i><i id="dot2"></i></div>
+
+    <!-- STEP 1: connection -->
+    <div id="step-connect">
+      <div id="invite-banner-slot"></div>
+
+      <div class="tabrow" id="tabrow">
+        <div class="tabbtn active" data-tab="create">Create Group</div>
+        <div class="tabbtn" data-tab="join">Join Group</div>
+      </div>
+
+      <div id="tab-create">
+        <div class="field">
+          <label>Group name</label>
+          <input id="in-groupname" type="text" placeholder="e.g. Weekend Trek Squad" maxlength="40">
+        </div>
+        <div class="field-hint" style="margin-bottom:4px;">A random 6-character group code will be generated for you to share after this.</div>
+      </div>
+
+      <div id="tab-join" style="display:none;">
+        <div class="field">
+          <label>Invite link or group code</label>
+          <input id="in-joincode" type="text" placeholder="Paste invite link or enter 6-character code">
+        </div>
+      </div>
+
+      <div class="err-msg" id="err-step1"></div>
+      <button class="btn-primary" id="btn-step1-next">Continue <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
     </div>
 
-    <div class="field">
-      <label>Avatar</label>
+    <!-- STEP 2: profile -->
+    <div id="step-profile" style="display:none;">
       <div class="avatar-row">
-        <div class="avatar-preview" id="avatar-preview">A</div>
-        <div class="emoji-picker" id="emoji-picker"></div>
+        <div class="avatar-preview" id="avatar-preview">?</div>
+        <div class="avatar-actions">
+          <label class="btn-upload" for="avatar-file">📷 Upload photo</label>
+          <input type="file" id="avatar-file" accept="image/*" style="display:none;">
+          <div style="font-size:10.5px; color:var(--muted-2); font-family:'JetBrains Mono',monospace;">or we'll use your initials</div>
+        </div>
       </div>
-      <div class="color-swatches" id="color-swatches"></div>
-      <button class="upload-btn" id="upload-trigger">Upload a photo instead</button>
-      <input type="file" id="photo-input" accept="image/*" style="display:none">
+      <div class="field">
+        <label>Your name</label>
+        <input id="in-myname" type="text" placeholder="How others will see you" maxlength="24">
+      </div>
+      <div class="field-hint" style="margin-bottom:14px;">📍 We'll ask for location access next — this powers live tracking on the map. Nothing is shared outside your group's database.</div>
+      <div class="err-msg" id="err-step2"></div>
+      <button class="btn-primary" id="btn-step2-join">
+        <span id="join-btn-label">Join & Start Sharing 🚀</span>
+      </button>
+      <button class="btn-ghost" id="btn-step2-back">Back</button>
     </div>
 
-    <button class="btn-primary" id="join-btn">Enable location & join</button>
-    <div class="status-line" id="status-line"></div>
   </div>
 </div>
 
-<!-- ===================== MAP APP ===================== -->
-<div id="app-screen">
-  <div id="map"></div>
-
+<!-- ============ APP ============ -->
+<div id="app">
   <div id="topbar">
-    <div id="room-pill" class="glass">
-      <div id="radar-widget"></div>
+    <div class="topbar-left glass">
+      <div class="brand-mark"><span></span></div>
       <div>
-        <div class="rlabel">Room</div>
-        <div class="rcode" id="room-code-display">—</div>
+        <div class="brand-name">ORBIT</div>
+        <div class="brand-sub" style="font-size:9px;">LIVE GROUP TRACKING</div>
       </div>
-      <button id="copy-link-btn">Copy invite</button>
+      <div class="group-chip"><span class="live-pulse"></span><span>GROUP</span><b id="hdr-groupname">—</b></div>
     </div>
-    <div id="topright">
-      <div class="icon-btn glass" id="recenter-btn" title="Recenter">⌖</div>
+    <div style="display:flex; gap:8px;">
+      <div class="icon-btn" id="btn-toggle-sidebar" title="Toggle members">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="icon-btn danger" id="btn-leave" title="Leave group">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
     </div>
   </div>
 
   <div id="sidebar" class="glass">
-    <div id="sidebar-head">
-      <h2 class="display">Group</h2>
-      <div class="count" id="member-count">1 member online</div>
+    <div class="sb-head">
+      <div class="sb-title">Members</div>
+      <div class="sb-count" id="sb-count">0</div>
     </div>
-    <div id="member-list"></div>
-    <div id="sidebar-foot">
-      <div id="unit-toggle">
-        <button data-unit="km" class="active">KM</button>
-        <button data-unit="mi">MI</button>
-      </div>
-      <button id="leave-btn">Leave room</button>
-    </div>
+    <div id="members-list"><div class="empty-hint">Waiting for members to appear…</div></div>
   </div>
 
-  <div id="toast" class="glass"></div>
+  <div id="controls" class="glass">
+    <div class="ctrl-btn" id="btn-locate" title="Center on me">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span class="lbl">Me</span>
+    </div>
+    <div class="ctrl-btn" id="btn-fit" title="Fit all members">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="lbl">Fit All</span>
+    </div>
+    <div class="ctrl-btn" id="btn-lines" title="Toggle distance lines">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="19" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="5" r="2" stroke="currentColor" stroke-width="2"/><path d="M6.5 17.5l11-11" stroke="currentColor" stroke-width="2"/></svg>
+      <span class="lbl">Links</span>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-btn primary" id="btn-invite">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M16 6l-4-4-4 4M12 2v13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span class="lbl">Invite</span>
+    </div>
+  </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- invite modal -->
+<div id="invite-modal">
+  <div class="modal-card glass">
+    <h3>Invite your group</h3>
+    <p>Share this link — it opens the app already connected to <b id="inv-groupname" style="color:var(--text);">this group</b>. Anyone with the link just adds their name & photo to join.</p>
+    <div class="link-box"><input id="inv-link" readonly><button class="copy-btn" id="copy-link">COPY</button></div>
+    <div class="field-hint" style="text-align:center; margin-bottom:6px;">— or share the code —</div>
+    <div class="code-display" id="inv-code">------</div>
+    <button class="btn-ghost" id="btn-close-invite">Close</button>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
 <script>
 (function(){
-  "use strict";
+"use strict";
 
-  /* ---------------- config / constants ---------------- */
-  const EMOJIS = ['🦊','🐺','🦅','🐢','🐬','🦁','🐯','🐼','🚀','⚡'];
-  const COLORS = ['#ffb454','#5eead4','#ff8fa3','#93c5fd','#c4b5fd','#86efac','#fca5a5','#fcd34d'];
-  const STALE_MS = 25000;
-  const WRITE_MIN_INTERVAL = 4000;
-  const POLL_INTERVAL = 3500;
+/* ================================================================
+   FIREBASE CONFIG — fill this in ONCE with your own project's
+   values (console.firebase.google.com → Project settings → your
+   web app → SDK config). Realtime Database must be enabled.
+   This is baked into the code so nobody using the app ever has
+   to see or type it.
+   ================================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCW0DasqEJk7GVmQDJbxNeVO-LDWmni_RA",
+  authDomain: "orbitpoint-c9ee5.firebaseapp.com",
+  databaseURL: "https://orbitpoint-c9ee5-default-rtdb.firebaseio.com",
+  projectId: "orbitpoint-c9ee5",
+  appId: "1:377856134157:web:6fb2d2fe8d10cc5f261944"
+};
 
-  let state = {
-    roomId: null,
-    memberId: null,
-    name: '',
-    emoji: EMOJIS[0],
-    color: COLORS[0],
-    photo: null,
-    unit: 'km',
-    members: {},        // memberId -> {name,emoji,color,photo,lat,lng,acc,updatedAt}
-    markers: {},        // memberId -> {marker, labelMarker}
-    lines: [],           // active mesh polylines + labels
-    lastWrite: 0,
-    map: null,
-    watchId: null,
+/* ================= CONSTANTS ================= */
+const PALETTE = ['#00e5ff','#ff6b9d','#ffb703','#7cff6b','#7c5cff','#ff8c42','#4dd4ac','#ff4d6d','#5ec8ff','#e879f9'];
+const STALE_MS = 25000;   // amber after 25s
+const OFFLINE_MS = 60000; // gray/hide after 60s
+const LS_KEY = 'orbit_session_v1';
+const CONFIG_READY = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('YOUR_') !== 0;
+
+let state = {
+  firebaseConfig: FIREBASE_CONFIG, groupId:null, groupName:null,
+  myId:null, myName:null, myAvatar:null, myColor:null,
+  db:null, membersRef:null, meRef:null,
+  members:{}, myPos:null,
+  map:null, markers:{}, lines:[], lineLabels:[],
+  linesVisible:true, watchId:null, firstFix:false
+};
+
+/* ================= UTIL ================= */
+function toast(msg, type){
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast glass ' + (type||'');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>el.remove(), 3000);
+}
+function haversine(lat1,lon1,lat2,lon2){
+  const R = 6371000;
+  const toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function fmtDist(m){
+  if(m == null || isNaN(m)) return '—';
+  if(m < 1000) return Math.round(m) + ' m';
+  return (m/1000).toFixed(m < 10000 ? 2 : 1) + ' km';
+}
+function fmtAgo(ts){
+  if(!ts) return 'never';
+  const s = Math.floor((Date.now()-ts)/1000);
+  if(s < 5) return 'just now';
+  if(s < 60) return s + 's ago';
+  const m = Math.floor(s/60);
+  if(m < 60) return m + 'm ago';
+  return Math.floor(m/60) + 'h ago';
+}
+function hashCode(str){
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = (h<<5)-h + str.charCodeAt(i); h |= 0; }
+  return Math.abs(h);
+}
+function colorFor(id){ return PALETTE[hashCode(id) % PALETTE.length]; }
+function initials(name){
+  return (name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+}
+function genGroupId(){
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for(let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function genMemberId(){
+  return 'm_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+}
+/* ================= AVATAR HANDLING ================= */
+let pendingAvatarDataUrl = null;
+function resizeImageFile(file, size, cb){
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = e => { img.src = e.target.result; };
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const s = Math.min(img.width, img.height);
+    const sx = (img.width-s)/2, sy = (img.height-s)/2;
+    ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+    cb(canvas.toDataURL('image/jpeg', 0.72));
   };
+  reader.readAsDataURL(file);
+}
 
-  /* ---------------- utility ---------------- */
-  function uid(){ return 'm' + Math.random().toString(36).slice(2,10); }
-  function genRoomCode(){
-    const words = ['FALCON','ORBIT','ZEPHYR','ATLAS','ONYX','NOVA','TRACE','ECHO'];
-    return words[Math.floor(Math.random()*words.length)] + '-' + Math.floor(10+Math.random()*89);
-  }
-  function haversine(lat1,lon1,lat2,lon2){
-    const R = 6371000;
-    const toRad = d => d*Math.PI/180;
-    const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
-    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
-  function fmtDist(meters){
-    if(state.unit === 'mi'){
-      const mi = meters / 1609.34;
-      return mi < 0.1 ? Math.round(meters*3.28084)+' ft' : mi.toFixed(2)+' mi';
-    }
-    return meters < 1000 ? Math.round(meters)+' m' : (meters/1000).toFixed(2)+' km';
-  }
-  function timeAgo(ts){
-    const s = Math.floor((Date.now()-ts)/1000);
-    if(s < 5) return 'just now';
-    if(s < 60) return s+'s ago';
-    return Math.floor(s/60)+'m ago';
-  }
-  function showToast(msg, kind){
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.style.display = 'block';
-    t.style.color = kind === 'err' ? '#ff6b6b' : '#e8edf5';
-    clearTimeout(showToast._h);
-    showToast._h = setTimeout(()=>{ t.style.display='none'; }, 3200);
-  }
-  function initials(name){ return (name||'?').trim().charAt(0).toUpperCase(); }
+/* ================= ONBOARDING WIRING ================= */
+const el = id => document.getElementById(id);
+let activeTab = 'create';
 
-  /* ---------------- join screen setup ---------------- */
-  const emojiPicker = document.getElementById('emoji-picker');
-  const colorRow = document.getElementById('color-swatches');
-  const avatarPreview = document.getElementById('avatar-preview');
-
-  EMOJIS.forEach((e,i)=>{
-    const el = document.createElement('div');
-    el.className = 'emoji-opt' + (i===0 ? ' active':'');
-    el.textContent = e;
-    el.onclick = ()=>{
-      document.querySelectorAll('.emoji-opt').forEach(x=>x.classList.remove('active'));
-      el.classList.add('active');
-      state.emoji = e; state.photo = null;
-      renderAvatarPreview();
-    };
-    emojiPicker.appendChild(el);
+function setStep(n){
+  el('dot1').classList.toggle('active', n>=1);
+  el('dot2').classList.toggle('active', n>=2);
+  el('step-connect').style.display = n===1 ? 'block' : 'none';
+  el('step-profile').style.display = n===2 ? 'block' : 'none';
+}
+document.querySelectorAll('.tabbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    el('tab-create').style.display = activeTab==='create' ? 'block':'none';
+    el('tab-join').style.display = activeTab==='join' ? 'block':'none';
   });
-  COLORS.forEach((c,i)=>{
-    const el = document.createElement('div');
-    el.className = 'swatch' + (i===0 ? ' active':'');
-    el.style.background = c;
-    el.onclick = ()=>{
-      document.querySelectorAll('.swatch').forEach(x=>x.classList.remove('active'));
-      el.classList.add('active');
-      state.color = c;
-      renderAvatarPreview();
-    };
-    colorRow.appendChild(el);
+});
+el('avatar-file').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  resizeImageFile(file, 128, (dataUrl)=>{
+    pendingAvatarDataUrl = dataUrl;
+    el('avatar-preview').innerHTML = `<img src="${dataUrl}">`;
   });
+});
+el('in-myname').addEventListener('input', ()=>{
+  if(!pendingAvatarDataUrl){
+    el('avatar-preview').textContent = initials(el('in-myname').value) || '?';
+  }
+});
 
-  function renderAvatarPreview(){
-    avatarPreview.style.background = state.photo ? 'transparent' : state.color;
-    if(state.photo){
-      avatarPreview.style.backgroundImage = `url(${state.photo})`;
-      avatarPreview.textContent = '';
-    } else {
-      avatarPreview.style.backgroundImage = 'none';
-      avatarPreview.textContent = state.emoji;
+let inviteParsed = null; // {config, groupId, groupName}
+
+function showErr(stepEl, msg){
+  const e = el(stepEl); e.textContent = msg; e.classList.add('show');
+}
+function clearErr(stepEl){ el(stepEl).classList.remove('show'); }
+
+el('btn-step1-next').addEventListener('click', ()=>{
+  clearErr('err-step1');
+  if(inviteParsed){
+    proceedToProfile();
+    return;
+  }
+  if(activeTab === 'create'){
+    const gname = el('in-groupname').value.trim() || 'Untitled Group';
+    state.groupId = genGroupId();
+    state.groupName = gname;
+    proceedToProfile();
+  } else {
+    const raw = el('in-joincode').value.trim();
+    let groupId = null, groupName = null;
+    const hashIdx = raw.indexOf('#g=');
+    if(hashIdx !== -1){
+      const params = new URLSearchParams(raw.slice(hashIdx+1));
+      groupId = params.get('g');
+      groupName = params.get('n');
+    } else if(raw.length >= 4){
+      groupId = raw.toUpperCase().replace(/\s+/g,'');
     }
-  }
-  renderAvatarPreview();
-
-  document.getElementById('upload-trigger').onclick = ()=> document.getElementById('photo-input').click();
-  document.getElementById('photo-input').onchange = (ev)=>{
-    const file = ev.target.files[0];
-    if(!file) return;
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      img.onload = ()=>{
-        const canvas = document.createElement('canvas');
-        const size = 96;
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        const scale = Math.max(size/img.width, size/img.height);
-        const w = img.width*scale, h = img.height*scale;
-        ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
-        state.photo = canvas.toDataURL('image/jpeg', 0.65);
-        renderAvatarPreview();
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // prefill room code
-  document.getElementById('room-input').value = genRoomCode();
-
-  // restore saved identity (personal, non-shared storage)
-  (async function restoreIdentity(){
-    try{
-      const res = await window.storage.get('meshpoint:identity', false);
-      if(res && res.value){
-        const d = JSON.parse(res.value);
-        if(d.name) document.getElementById('name-input').value = d.name;
-        if(d.emoji) state.emoji = d.emoji;
-        if(d.color) state.color = d.color;
-        if(d.photo) state.photo = d.photo;
-        renderAvatarPreview();
-        document.querySelectorAll('.emoji-opt').forEach(x=> x.classList.toggle('active', x.textContent===d.emoji));
-        document.querySelectorAll('.swatch').forEach(x=> x.classList.toggle('active', x.style.background===colorToRgb(d.color)));
-      }
-    }catch(e){ /* no saved identity yet */ }
-  })();
-  function colorToRgb(hex){
-    // rough helper so active swatch highlight can match; browsers store style as rgb
-    const c = document.createElement('div'); c.style.background = hex; document.body.appendChild(c);
-    const rgb = getComputedStyle(c).backgroundColor; document.body.removeChild(c); return rgb;
-  }
-
-  /* ---------------- join flow ---------------- */
-  document.getElementById('join-btn').onclick = joinRoom;
-
-  function joinRoom(){
-    const statusEl = document.getElementById('status-line');
-    const room = document.getElementById('room-input').value.trim().toUpperCase().replace(/\s+/g,'-');
-    const name = document.getElementById('name-input').value.trim();
-    if(!room){ statusEl.textContent = 'Enter a room code to continue.'; statusEl.className='status-line err'; return; }
-    if(!name){ statusEl.textContent = 'Enter your name so others can see you.'; statusEl.className='status-line err'; return; }
-
-    state.roomId = room;
-    state.name = name;
-    state.memberId = uid();
-
-    statusEl.className = 'status-line';
-    statusEl.textContent = 'Requesting location permission…';
-
-    if(!navigator.geolocation){
-      statusEl.textContent = 'Geolocation isn\'t supported on this device/browser.';
-      statusEl.className = 'status-line err';
+    if(!groupId){
+      showErr('err-step1', 'That does not look like a valid invite link or code.');
       return;
     }
+    state.groupId = groupId;
+    state.groupName = groupName || ('Group ' + groupId);
+    proceedToProfile();
+  }
+});
 
-    document.getElementById('join-btn').disabled = true;
+function proceedToProfile(){
+  setStep(2);
+  el('in-myname').focus();
+}
+el('btn-step2-back').addEventListener('click', ()=> setStep(1));
 
-    navigator.geolocation.getCurrentPosition(
-      (pos)=>{
-        saveIdentity();
-        enterApp(pos.coords);
-      },
-      (err)=>{
-        document.getElementById('join-btn').disabled = false;
-        statusEl.className = 'status-line err';
-        if(err.code === 1) statusEl.textContent = 'Location permission denied — allow it in your browser settings to join.';
-        else statusEl.textContent = 'Couldn\'t get your location. Check GPS/network and try again.';
-      },
-      { enableHighAccuracy:true, timeout:12000, maximumAge:5000 }
-    );
+el('btn-step2-join').addEventListener('click', async ()=>{
+  clearErr('err-step2');
+  const name = el('in-myname').value.trim();
+  if(!name){ showErr('err-step2','Please enter your name.'); return; }
+  state.myName = name;
+  state.myAvatar = pendingAvatarDataUrl;
+  const btn = el('btn-step2-join');
+  btn.disabled = true;
+  el('join-btn-label').innerHTML = '<span class="spinner"></span>';
+  try{
+    await initFirebaseAndJoin();
+  }catch(err){
+    console.error(err);
+    showErr('err-step2', 'Connection failed: ' + (err.message || err));
+    btn.disabled = false;
+    el('join-btn-label').textContent = 'Join & Start Sharing 🚀';
+  }
+});
+
+/* ================= INVITE PARSE ON LOAD ================= */
+(function checkInviteHash(){
+  const hash = location.hash;
+  const idx = hash.indexOf('g=');
+  if(idx === -1) return;
+  const params = new URLSearchParams(hash.slice(idx===0?1:1)); // hash starts with '#'
+  const g = params.get('g'), n = params.get('n');
+  if(g){
+    inviteParsed = { g, n };
+    state.groupId = g;
+    state.groupName = n || ('Group ' + g);
+    const slot = document.getElementById('invite-banner-slot');
+    slot.innerHTML = `<div class="invite-banner"><span class="dot"></span> You're joining <b style="color:var(--text)">&nbsp;${escapeHtml(n||g)}&nbsp;</b> via invite link</div>`;
+    document.getElementById('tabrow').style.display = 'none';
+    document.getElementById('tab-create').style.display = 'none';
+    document.getElementById('tab-join').style.display = 'none';
+  }
+})();
+
+/* ================= AUTO-RESTORE SESSION ================= */
+function trySavedSession(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    if(!s.groupId || !s.myId || !s.myName) return false;
+    state.groupId = s.groupId;
+    state.groupName = s.groupName;
+    state.myId = s.myId;
+    state.myName = s.myName;
+    state.myAvatar = s.myAvatar;
+    state.myColor = s.myColor || colorFor(s.myId);
+    launchApp(true);
+    return true;
+  }catch(e){ return false; }
+}
+function saveSession(){
+  localStorage.setItem(LS_KEY, JSON.stringify({
+    groupId: state.groupId, groupName: state.groupName,
+    myId: state.myId, myName: state.myName, myAvatar: state.myAvatar, myColor: state.myColor
+  }));
+}
+function clearSession(){ localStorage.removeItem(LS_KEY); }
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+/* ================= FIREBASE ================= */
+let fbAppInitialized = false;
+function getFirebaseApp(){
+  if(!fbAppInitialized){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fbAppInitialized = true;
+  }
+  return firebase.app();
+}
+async function initFirebaseAndJoin(){
+  const app = getFirebaseApp();
+  state.db = app.database();
+  state.myId = genMemberId();
+  state.myColor = colorFor(state.myId);
+
+  // quick connectivity check
+  await state.db.ref('.info/connected').once('value');
+
+  // ensure group meta exists
+  const groupMetaRef = state.db.ref(`groups/${state.groupId}/meta`);
+  const metaSnap = await groupMetaRef.once('value');
+  if(!metaSnap.exists()){
+    await groupMetaRef.set({ name: state.groupName, createdAt: Date.now() });
+  } else {
+    state.groupName = metaSnap.val().name || state.groupName;
   }
 
-  async function saveIdentity(){
-    try{
-      await window.storage.set('meshpoint:identity', JSON.stringify({
-        name: state.name, emoji: state.emoji, color: state.color, photo: state.photo
-      }), false);
-    }catch(e){}
+  saveSession();
+  launchApp(false);
+}
+
+function launchApp(isRestore){
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('app').classList.add('active');
+  document.getElementById('hdr-groupname').textContent = state.groupName || state.groupId;
+
+  if(!state.db){
+    state.db = getFirebaseApp().database();
   }
 
-  /* ---------------- map app ---------------- */
-  function enterApp(coords){
-    document.getElementById('join-screen').style.display = 'none';
-    document.getElementById('app-screen').style.display = 'block';
-    document.getElementById('room-code-display').textContent = state.roomId;
+  state.membersRef = state.db.ref(`groups/${state.groupId}/members`);
+  state.meRef = state.membersRef.child(state.myId);
 
-    state.map = L.map('map', { zoomControl:false, attributionControl:true }).setView([coords.latitude, coords.longitude], 15);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd', maxZoom: 20
-    }).addTo(state.map);
+  state.meRef.onDisconnect().remove();
 
-    updateSelf(coords);
-    startWatch();
-    pollLoop();
-    setInterval(pollLoop, POLL_INTERVAL);
-    setInterval(refreshStaleness, 5000);
+  initMap();
+  listenMembers();
+  startWatch();
+}
 
-    showToast('Connected — sharing your live location in ' + state.roomId);
+function pushMyLocation(pos){
+  const data = {
+    name: state.myName,
+    avatar: state.myAvatar || null,
+    color: state.myColor,
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude,
+    accuracy: pos.coords.accuracy || null,
+    heading: pos.coords.heading || null,
+    speed: pos.coords.speed || null,
+    updatedAt: Date.now()
+  };
+  state.meRef.set(data).catch(err=> console.error('write failed', err));
+}
+
+function startWatch(){
+  if(!navigator.geolocation){
+    toast('Geolocation not supported on this device.', 'error');
+    return;
   }
+  state.watchId = navigator.geolocation.watchPosition(
+    (pos)=>{
+      state.myPos = pos;
+      pushMyLocation(pos);
+      if(!state.firstFix){
+        state.firstFix = true;
+        state.map.setView([pos.coords.latitude, pos.coords.longitude], 16, {animate:true});
+      }
+      renderAll();
+    },
+    (err)=>{
+      console.warn(err);
+      if(err.code === 1) toast('Location permission denied — enable it to share your position.', 'error');
+      else toast('Could not get your location: ' + err.message, 'error');
+    },
+    { enableHighAccuracy:true, maximumAge:3000, timeout:15000 }
+  );
+}
 
-  function startWatch(){
-    state.watchId = navigator.geolocation.watchPosition(
-      (pos)=>{ updateSelf(pos.coords); },
-      (err)=>{ showToast('Location signal lost — retrying…', 'err'); },
-      { enableHighAccuracy:true, maximumAge:4000, timeout:15000 }
-    );
-  }
-
-  function updateSelf(coords){
-    state.members[state.memberId] = {
-      name: state.name, emoji: state.emoji, color: state.color, photo: state.photo,
-      lat: coords.latitude, lng: coords.longitude, acc: coords.accuracy, updatedAt: Date.now(), self:true
-    };
+function listenMembers(){
+  state.membersRef.on('value', (snap)=>{
+    const val = snap.val() || {};
+    state.members = val;
+    document.getElementById('sb-count').textContent = Object.keys(val).length;
     renderAll();
-    const now = Date.now();
-    if(now - state.lastWrite > WRITE_MIN_INTERVAL){
-      state.lastWrite = now;
-      writeSelf();
+  });
+}
+
+/* ================= MAP ================= */
+function initMap(){
+  state.map = L.map('map', { zoomControl:false, attributionControl:true }).setView([20,0], 3);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap &copy; CARTO',
+    subdomains:'abcd', maxZoom:20
+  }).addTo(state.map);
+}
+
+function buildMarkerHtml(m, isMe){
+  const color = m.color || '#00e5ff';
+  const avatarInner = m.avatar
+    ? `<img src="${m.avatar}">`
+    : initials(m.name);
+  return `
+    <div class="orbit-marker" style="--ring:${color}; --ring-glow:${color}88;">
+      ${isMe ? '<div class="ring"></div>' : ''}
+      <div class="avatar">${avatarInner}</div>
+      <div class="label">${escapeHtml(m.name || 'Member')}${isMe ? ' · you' : ''}</div>
+    </div>`;
+}
+
+function renderAll(){
+  renderMarkers();
+  renderSidebar();
+  renderLines();
+}
+
+function renderMarkers(){
+  const seen = new Set();
+  const now = Date.now();
+  Object.entries(state.members).forEach(([id, m])=>{
+    if(m.lat == null || m.lng == null) return;
+    if(now - (m.updatedAt||0) > OFFLINE_MS && id !== state.myId) return; // hide long-offline others
+    seen.add(id);
+    const isMe = id === state.myId;
+    const icon = L.divIcon({
+      html: buildMarkerHtml(m, isMe),
+      className:'', iconSize:[40,40], iconAnchor:[20,20]
+    });
+    if(state.markers[id]){
+      state.markers[id].setLatLng([m.lat, m.lng]);
+      state.markers[id].setIcon(icon);
+    } else {
+      state.markers[id] = L.marker([m.lat, m.lng], {icon, zIndexOffset:isMe?1000:0}).addTo(state.map);
+    }
+  });
+  Object.keys(state.markers).forEach(id=>{
+    if(!seen.has(id)){ state.map.removeLayer(state.markers[id]); delete state.markers[id]; }
+  });
+}
+
+function renderLines(){
+  state.lines.forEach(l=>state.map.removeLayer(l));
+  state.lineLabels.forEach(l=>state.map.removeLayer(l));
+  state.lines = []; state.lineLabels = [];
+  if(!state.linesVisible) return;
+
+  const entries = Object.entries(state.members).filter(([id,m])=> m.lat!=null && m.lng!=null && state.markers[id]);
+  for(let i=0;i<entries.length;i++){
+    for(let j=i+1;j<entries.length;j++){
+      const [id1,m1] = entries[i], [id2,m2] = entries[j];
+      const line = L.polyline([[m1.lat,m1.lng],[m2.lat,m2.lng]], {
+        color:'#00e5ff', weight:1.4, opacity:0.35, dashArray:'4,6'
+      }).addTo(state.map);
+      state.lines.push(line);
+
+      const dist = haversine(m1.lat,m1.lng,m2.lat,m2.lng);
+      const midLat = (m1.lat+m2.lat)/2, midLng = (m1.lng+m2.lng)/2;
+      const chip = L.marker([midLat, midLng], {
+        icon: L.divIcon({ html:`<div class="dist-chip">${fmtDist(dist)}</div>`, className:'', iconSize:[0,0] }),
+        interactive:false
+      }).addTo(state.map);
+      state.lineLabels.push(chip);
     }
   }
+}
 
-  async function writeSelf(){
-    const m = state.members[state.memberId];
-    if(!m) return;
-    try{
-      await window.storage.set(
-        'geoshare:'+state.roomId+':loc:'+state.memberId,
-        JSON.stringify({ name:m.name, emoji:m.emoji, color:m.color, photo:m.photo, lat:m.lat, lng:m.lng, acc:m.acc, updatedAt:m.updatedAt }),
-        true
-      );
-    }catch(e){ /* transient storage error, will retry next cycle */ }
+function renderSidebar(){
+  const list = document.getElementById('members-list');
+  const entries = Object.entries(state.members).filter(([id,m])=>m.lat!=null);
+  if(entries.length === 0){
+    list.innerHTML = '<div class="empty-hint">Waiting for members to appear…<br>Share the invite to get your group live.</div>';
+    return;
   }
-
-  async function pollLoop(){
-    if(!state.roomId) return;
-    try{
-      const listRes = await window.storage.list('geoshare:'+state.roomId+':loc:', true);
-      const keys = (listRes && listRes.keys) ? listRes.keys : [];
-      for(const key of keys){
-        const mid = key.split(':loc:')[1];
-        if(mid === state.memberId) continue;
-        try{
-          const r = await window.storage.get(key, true);
-          if(r && r.value){
-            const d = JSON.parse(r.value);
-            state.members[mid] = { ...d, self:false };
-          }
-        }catch(e){ /* skip this member this cycle */ }
-      }
-      renderAll();
-    }catch(e){
-      // listing failed this cycle; UI keeps last known state
-    }
-  }
-
-  function refreshStaleness(){ renderAll(); }
-
-  /* ---------------- rendering ---------------- */
-  function avatarInnerHTML(m){
-    if(m.photo) return '';
-    return m.emoji || initials(m.name);
-  }
-  function avatarStyle(m){
-    if(m.photo) return `background-image:url(${m.photo});`;
-    return `background:${m.color || '#5eead4'};`;
-  }
-
-  function renderAll(){
-    const ids = Object.keys(state.members);
-    const me = state.members[state.memberId];
-
-    // --- markers ---
-    ids.forEach(id=>{
-      const m = state.members[id];
-      const stale = !m.self && (Date.now() - m.updatedAt > STALE_MS);
-      const html = m.self
-        ? `<div style="display:flex;flex-direction:column;align-items:center;">
-             <div class="self-pulse"></div>
-             <div class="marker-label">${escapeHtml(m.name)} <span style="color:#ffb454">· you</span></div>
-           </div>`
-        : `<div style="display:flex;flex-direction:column;align-items:center;">
-             <div class="marker-avatar ${stale?'stale':''}" style="${avatarStyle(m)}">${avatarInnerHTML(m)}</div>
-             <div class="marker-label">${escapeHtml(m.name)}${stale?' <span style=\"color:#ff6b6b\">· offline</span>':''}</div>
-           </div>`;
-      const icon = L.divIcon({ html, className:'', iconSize:[60,60], iconAnchor:[30,20] });
-      if(state.markers[id]){
-        state.markers[id].setLatLng([m.lat, m.lng]);
-        state.markers[id].setIcon(icon);
-      } else {
-        state.markers[id] = L.marker([m.lat, m.lng], { icon, zIndexOffset: m.self?1000:0 }).addTo(state.map);
-      }
-    });
-    // remove markers for members no longer present
-    Object.keys(state.markers).forEach(id=>{
-      if(!state.members[id]){ state.map.removeLayer(state.markers[id]); delete state.markers[id]; }
-    });
-
-    // --- mesh lines between all pairs ---
-    state.lines.forEach(l=> state.map.removeLayer(l));
-    state.lines = [];
-    for(let i=0;i<ids.length;i++){
-      for(let j=i+1;j<ids.length;j++){
-        const a = state.members[ids[i]], b = state.members[ids[j]];
-        const line = L.polyline([[a.lat,a.lng],[b.lat,b.lng]], {
-          color: (a.self||b.self) ? '#ffb454' : '#5eead4',
-          weight: 1.4, opacity: 0.45, dashArray: '4,6'
-        }).addTo(state.map);
-        state.lines.push(line);
-        const midLat = (a.lat+b.lat)/2, midLng = (a.lng+b.lng)/2;
-        const dist = haversine(a.lat,a.lng,b.lat,b.lng);
-        const distIcon = L.divIcon({
-          html:`<div class="dist-label">${fmtDist(dist)}</div>`, className:'', iconSize:[70,20], iconAnchor:[35,10]
-        });
-        const dm = L.marker([midLat,midLng], { icon:distIcon, interactive:false }).addTo(state.map);
-        state.lines.push(dm);
-      }
-    }
-
-    renderSidebar(ids, me);
-  }
-
-  function renderSidebar(ids, me){
-    const list = document.getElementById('member-list');
-    const onlineCount = ids.filter(id=> state.members[id].self || (Date.now()-state.members[id].updatedAt <= STALE_MS)).length;
-    document.getElementById('member-count').textContent = onlineCount + (onlineCount===1?' member online':' members online');
-
-    const sorted = ids.slice().sort((a,b)=>{
-      if(state.members[a].self) return -1;
-      if(state.members[b].self) return 1;
-      return (state.members[a].name||'').localeCompare(state.members[b].name||'');
-    });
-
-    list.innerHTML = '';
-    sorted.forEach(id=>{
-      const m = state.members[id];
-      const stale = !m.self && (Date.now()-m.updatedAt > STALE_MS);
-      const row = document.createElement('div');
-      row.className = 'member-row';
-      let distHtml = '';
-      if(!m.self && me){
-        const d = haversine(me.lat, me.lng, m.lat, m.lng);
-        distHtml = `<div class="m-dist"><div class="val">${fmtDist(d)}</div><div class="lbl">away</div></div>`;
-      }
-      row.innerHTML = `
-        <div class="m-avatar" style="${avatarStyle(m)}">${avatarInnerHTML(m)}
-          <div class="dot ${stale?'stale':'online'}"></div>
-        </div>
-        <div class="m-info">
-          <div class="m-name">${escapeHtml(m.name)}${m.self?'<span class="you-tag">YOU</span>':''}</div>
-          <div class="m-sub">${m.self ? 'Broadcasting live' : (stale ? 'Last seen '+timeAgo(m.updatedAt) : 'Updated '+timeAgo(m.updatedAt))}</div>
-        </div>
-        ${distHtml}
-      `;
-      row.onclick = ()=>{ if(state.map) state.map.setView([m.lat,m.lng], Math.max(state.map.getZoom(),16), {animate:true}); };
-      list.appendChild(row);
-    });
-  }
-
-  function escapeHtml(s){
-    return (s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-  }
-
-  /* ---------------- controls ---------------- */
-  document.getElementById('copy-link-btn').onclick = ()=>{
-    const text = state.roomId;
-    navigator.clipboard && navigator.clipboard.writeText(text).then(()=>{
-      showToast('Room code "'+text+'" copied — share it with your group');
-    }).catch(()=> showToast('Room code: '+text));
-  };
-
-  document.getElementById('recenter-btn').onclick = ()=>{
-    const me = state.members[state.memberId];
-    if(me && state.map) state.map.setView([me.lat, me.lng], 16, {animate:true});
-  };
-
-  document.querySelectorAll('#unit-toggle button').forEach(btn=>{
-    btn.onclick = ()=>{
-      document.querySelectorAll('#unit-toggle button').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      state.unit = btn.dataset.unit;
-      renderAll();
-    };
+  const now = Date.now();
+  entries.sort((a,b)=>{
+    if(a[0]===state.myId) return -1;
+    if(b[0]===state.myId) return 1;
+    const da = state.myPos ? haversine(state.myPos.coords.latitude,state.myPos.coords.longitude,a[1].lat,a[1].lng) : 0;
+    const db = state.myPos ? haversine(state.myPos.coords.latitude,state.myPos.coords.longitude,b[1].lat,b[1].lng) : 0;
+    return da-db;
   });
 
-  document.getElementById('leave-btn').onclick = async ()=>{
-    try{ await window.storage.delete('geoshare:'+state.roomId+':loc:'+state.memberId, true); }catch(e){}
-    if(state.watchId!=null) navigator.geolocation.clearWatch(state.watchId);
-    location.reload();
-  };
+  list.innerHTML = entries.map(([id,m])=>{
+    const isMe = id === state.myId;
+    const age = now - (m.updatedAt||0);
+    const statusClass = age < STALE_MS ? 'online' : (age < OFFLINE_MS ? 'stale' : '');
+    let distHtml = '';
+    if(!isMe && state.myPos){
+      const d = haversine(state.myPos.coords.latitude, state.myPos.coords.longitude, m.lat, m.lng);
+      distHtml = `<div class="m-dist"><b>${fmtDist(d)}</b><span>away</span></div>`;
+    }
+    const avatarInner = m.avatar ? `<img src="${m.avatar}">` : initials(m.name);
+    return `
+      <div class="member-card ${isMe?'me':''}">
+        <div class="m-avatar" style="--ring:${m.color||'#00e5ff'}">${avatarInner}<span class="m-status ${statusClass}"></span></div>
+        <div class="m-info">
+          <div class="m-name">${escapeHtml(m.name||'Member')} ${isMe?'<span class="you-tag">YOU</span>':''}</div>
+          <div class="m-meta">${age < STALE_MS ? 'live' : fmtAgo(m.updatedAt)}</div>
+        </div>
+        ${distHtml}
+      </div>`;
+  }).join('');
+}
+
+/* ================= CONTROLS ================= */
+document.getElementById('btn-locate').addEventListener('click', ()=>{
+  if(state.myPos){
+    state.map.setView([state.myPos.coords.latitude, state.myPos.coords.longitude], 17, {animate:true});
+  } else {
+    toast('Waiting for your location fix…');
+  }
+});
+document.getElementById('btn-fit').addEventListener('click', ()=>{
+  const pts = Object.values(state.members).filter(m=>m.lat!=null).map(m=>[m.lat,m.lng]);
+  if(pts.length === 0){ toast('No members to fit yet.'); return; }
+  if(pts.length === 1){ state.map.setView(pts[0], 16); return; }
+  state.map.fitBounds(L.latLngBounds(pts), {padding:[70,70]});
+});
+document.getElementById('btn-lines').addEventListener('click', function(){
+  state.linesVisible = !state.linesVisible;
+  this.classList.toggle('on', state.linesVisible);
+  renderLines();
+});
+document.getElementById('btn-lines').classList.add('on');
+
+document.getElementById('btn-toggle-sidebar').addEventListener('click', function(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  this.classList.toggle('on', !sb.classList.contains('collapsed'));
+});
+
+document.getElementById('btn-invite').addEventListener('click', openInvite);
+document.getElementById('btn-close-invite').addEventListener('click', ()=>{
+  document.getElementById('invite-modal').classList.remove('show');
+});
+function openInvite(){
+  const link = location.origin + location.pathname + '#g=' + encodeURIComponent(state.groupId) + '&n=' + encodeURIComponent(state.groupName);
+  document.getElementById('inv-link').value = link;
+  document.getElementById('inv-code').textContent = state.groupId;
+  document.getElementById('inv-groupname').textContent = state.groupName;
+  document.getElementById('invite-modal').classList.add('show');
+}
+document.getElementById('copy-link').addEventListener('click', ()=>{
+  const input = document.getElementById('inv-link');
+  input.select(); input.setSelectionRange(0,999);
+  navigator.clipboard?.writeText(input.value).then(()=> toast('Invite link copied!', 'success'))
+    .catch(()=> { document.execCommand('copy'); toast('Invite link copied!', 'success'); });
+});
+
+document.getElementById('btn-leave').addEventListener('click', ()=>{
+  if(!confirm('Leave this group and stop sharing your location?')) return;
+  try{
+    if(state.watchId) navigator.geolocation.clearWatch(state.watchId);
+    if(state.meRef) state.meRef.remove();
+  }catch(e){}
+  clearSession();
+  location.hash = '';
+  location.reload();
+});
+
+/* periodic re-render for "time ago" freshness */
+setInterval(()=>{ if(document.getElementById('app').classList.contains('active')) renderSidebar(); }, 5000);
+
+/* ================= BOOT ================= */
+if(!CONFIG_READY){
+  document.getElementById('onb-card').innerHTML = `
+    <div class="brand"><div class="brand-mark"><span></span></div>
+      <div><div class="brand-name">ORBIT<em>·</em></div><div class="brand-sub">SETUP REQUIRED</div></div>
+    </div>
+    <div class="err-msg show" style="margin-bottom:14px;">Firebase isn't configured yet.</div>
+    <div class="field-hint" style="font-size:12px; line-height:1.7;">
+      Open this file's source and fill in the <b style="color:var(--text)">FIREBASE_CONFIG</b> constant near the top of the &lt;script&gt; section with your project's values, then reload:<br><br>
+      1. Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a><br>
+      2. Create a project → Build → Realtime Database → start in test mode<br>
+      3. Project settings → your web app → copy the SDK config into <span class="mono">FIREBASE_CONFIG</span><br><br>
+      This only needs to be done once — everyone who opens this file afterward joins straight away, with no setup screen.
+    </div>`;
+} else if(!trySavedSession()){
+  setStep(1);
+}
 
 })();
 </script>
