@@ -199,6 +199,24 @@
   }
   @keyframes pulseRing{0%{transform:scale(.5); opacity:1;} 100%{transform:scale(2.2); opacity:0;}}
 
+  .gps-chip{
+    display:flex; align-items:center; gap:7px; font-size:11px; color:var(--muted);
+    padding-left:12px; border-left:1px solid var(--border-soft); margin-left:2px;
+  }
+  .gps-dot{width:7px; height:7px; border-radius:50%; background:var(--success); flex:none;}
+  .gps-text{color:var(--text); font-weight:500;}
+
+  #stats-strip{
+    position:absolute; top:78px; left:50%; transform:translateX(-50%); z-index:19;
+    display:none; align-items:center; gap:14px; padding:9px 18px; border-radius:14px;
+    font-size:11.5px; color:var(--muted); pointer-events:none; white-space:nowrap;
+  }
+  .stat-item{display:flex; align-items:center; gap:7px;}
+  .stat-item b{color:var(--text); font-weight:600;}
+  .stat-dot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .stat-sep{width:1px; height:14px; background:var(--border);}
+  @media (max-width:720px){ #stats-strip{display:none !important;} }
+
   .icon-btn{
     width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
     cursor:pointer; color:var(--muted); transition:.2s; flex:none; border:1px solid var(--border);
@@ -317,11 +335,38 @@
     background:var(--ring,#00e5ff); overflow:hidden; position:relative; z-index:2;
   }
   .orbit-marker .avatar img{width:100%; height:100%; object-fit:cover;}
+  .orbit-marker .heading-arrow{
+    position:absolute; top:-9px; left:50%; width:0; height:0; z-index:3; transform-origin:50% 24px;
+    border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:9px solid var(--ring,#00e5ff);
+    filter:drop-shadow(0 0 3px var(--ring-glow, rgba(0,229,255,.6)));
+  }
+  .orbit-marker .speed-badge{
+    position:absolute; bottom:-6px; right:-8px; z-index:3; background:var(--bg-2); border:1.5px solid var(--ring,#00e5ff);
+    color:var(--text); font-family:'JetBrains Mono',monospace; font-size:8.5px; font-weight:700; padding:1px 4px;
+    border-radius:6px; display:flex; align-items:baseline; gap:2px; line-height:1.2;
+  }
+  .orbit-marker .speed-badge span{font-size:6.5px; color:var(--muted); font-weight:500;}
   .orbit-marker .label{
     position:absolute; top:46px; left:50%; transform:translateX(-50%); white-space:nowrap;
     font-size:10px; font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--text);
     background:rgba(7,10,18,.8); padding:2px 8px; border-radius:7px; border:1px solid var(--border-soft);
     z-index:2;
+  }
+  .dest-marker{ animation:destDrop .45s cubic-bezier(.3,1.4,.4,1); transform-origin:bottom center; filter:drop-shadow(0 3px 8px rgba(0,0,0,.5)); }
+  @keyframes destDrop{ from{transform:translateY(-24px) scale(.4); opacity:0;} to{transform:none; opacity:1;} }
+  #map.picking{ cursor:crosshair; }
+  #map.picking::after{
+    content:"Tap to drop destination pin"; position:fixed; bottom:100px; left:50%; transform:translateX(-50%);
+    background:rgba(7,10,18,.9); border:1px solid rgba(0,229,255,.4); color:var(--cyan); font-size:12px;
+    padding:8px 16px; border-radius:20px; z-index:25; font-family:'JetBrains Mono',monospace; pointer-events:none;
+    animation:cardIn .3s ease;
+  }
+  .dest-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:3px;
+    font-size:10px; font-family:'JetBrains Mono',monospace; color:var(--amber);
+  }
+  .dest-clear{
+    color:var(--danger); cursor:pointer; text-decoration:underline; text-underline-offset:2px; flex:none;
   }
   .dist-chip{
     background:rgba(7,10,18,.88); border:1px solid rgba(0,229,255,.3); color:var(--cyan);
@@ -332,7 +377,7 @@
   @media (max-width:720px){
     #sidebar{width:calc(100% - 32px); left:16px; right:16px; top:auto; bottom:92px; height:38vh;}
     #sidebar.collapsed{transform:translateY(120%);}
-    .topbar-left .brand-sub, .group-chip{display:none;}
+    .topbar-left .brand-sub, .group-chip, .gps-chip{display:none;}
     #controls{gap:4px; padding:7px; max-width:calc(100% - 24px); overflow-x:auto;}
     .ctrl-btn span.lbl{display:none;}
   }
@@ -420,8 +465,15 @@
         <div class="brand-sub" style="font-size:9px;">LIVE GROUP TRACKING</div>
       </div>
       <div class="group-chip"><span class="live-pulse"></span><span>GROUP</span><b id="hdr-groupname">—</b></div>
+      <div class="gps-chip" id="gps-chip" style="display:none;"><span class="gps-dot"></span><span class="gps-text mono">—</span></div>
     </div>
     <div style="display:flex; gap:8px;">
+      <div class="icon-btn" id="btn-style" title="Toggle map style">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="icon-btn" id="btn-mute" title="Toggle sound">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M11 5 6 9H2v6h4l5 4V5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path id="mute-waves" d="M15.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
       <div class="icon-btn" id="btn-toggle-sidebar" title="Toggle members">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </div>
@@ -430,6 +482,8 @@
       </div>
     </div>
   </div>
+
+  <div id="stats-strip" class="glass"></div>
 
   <div id="sidebar" class="glass">
     <div class="sb-head">
@@ -444,6 +498,10 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <span class="lbl">Me</span>
     </div>
+    <div class="ctrl-btn" id="btn-follow" title="Follow me">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/></svg>
+      <span class="lbl">Follow</span>
+    </div>
     <div class="ctrl-btn" id="btn-fit" title="Fit all members">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="lbl">Fit All</span>
@@ -451,6 +509,11 @@
     <div class="ctrl-btn" id="btn-lines" title="Toggle distance lines">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="19" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="5" r="2" stroke="currentColor" stroke-width="2"/><path d="M6.5 17.5l11-11" stroke="currentColor" stroke-width="2"/></svg>
       <span class="lbl">Links</span>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-btn" id="btn-dest" title="Set your destination">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="2"/></svg>
+      <span class="lbl">Destination</span>
     </div>
     <div class="ctrl-sep"></div>
     <div class="ctrl-btn primary" id="btn-invite">
@@ -502,14 +565,21 @@ const STALE_MS = 25000;   // amber after 25s
 const OFFLINE_MS = 60000; // gray/hide after 60s
 const LS_KEY = 'orbit_session_v1';
 const CONFIG_READY = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('YOUR_') !== 0;
+const ARRIVAL_RADIUS_M = 30;     // considered "arrived" within this many meters
+const MARKER_ANIM_MS = 550;      // smooth glide duration between position fixes
+const WALK_SPEED_MPS = 1.35;     // ~4.9 km/h, used for ETA fallback
 
 let state = {
   firebaseConfig: FIREBASE_CONFIG, groupId:null, groupName:null,
   myId:null, myName:null, myAvatar:null, myColor:null,
-  db:null, membersRef:null, meRef:null,
-  members:{}, myPos:null,
+  db:null, membersRef:null, meRef:null, destRef:null,
+  members:{}, myPos:null, prevPositions:{},
   map:null, markers:{}, lines:[], lineLabels:[],
-  linesVisible:true, watchId:null, firstFix:false
+  linesVisible:true, watchId:null, firstFix:false,
+  destinations:{}, destMarkers:{}, destLines:{}, destLabels:{},
+  pickingDestination:false, followMe:false, muted:false,
+  celebrated:{}, tileLayer:null, mapStyle:'dark', accuracyCircle:null,
+  statsEl:null
 };
 
 /* ================= UTIL ================= */
@@ -559,6 +629,77 @@ function genGroupId(){
 }
 function genMemberId(){
   return 'm_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+}
+function fmtEta(meters, speedMps){
+  const speed = (speedMps && speedMps > 0.3) ? speedMps : WALK_SPEED_MPS;
+  const secs = meters / speed;
+  if(secs < 60) return '<1 min';
+  const mins = Math.round(secs/60);
+  if(mins < 60) return mins + ' min';
+  const h = Math.floor(mins/60), m = mins%60;
+  return h + 'h ' + m + 'm';
+}
+function accuracyTier(acc){
+  if(acc == null) return {label:'—', color:'var(--muted-2)'};
+  if(acc <= 15) return {label:'Excellent', color:'var(--success)'};
+  if(acc <= 40) return {label:'Good', color:'var(--cyan)'};
+  if(acc <= 80) return {label:'Fair', color:'var(--amber)'};
+  return {label:'Weak', color:'var(--danger)'};
+}
+function playChime(freqs){
+  if(state.muted) return;
+  try{
+    const ctx = playChime._ctx || (playChime._ctx = new (window.AudioContext||window.webkitAudioContext)());
+    let t = ctx.currentTime;
+    freqs.forEach((f,i)=>{
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t + i*0.11);
+      g.gain.linearRampToValueAtTime(0.11, t + i*0.11 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i*0.11 + 0.4);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t + i*0.11); o.stop(t + i*0.11 + 0.42);
+    });
+  }catch(e){}
+}
+function burstConfetti(){
+  const canvas = document.createElement('canvas');
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  canvas.style.cssText = 'position:fixed;inset:0;z-index:1400;pointer-events:none;';
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const colors = PALETTE;
+  const N = 90;
+  const parts = Array.from({length:N}, ()=> ({
+    x: canvas.width/2 + (Math.random()-0.5)*120,
+    y: canvas.height*0.32 + (Math.random()-0.5)*60,
+    vx: (Math.random()-0.5)*11,
+    vy: Math.random()*-9 - 4,
+    g: 0.28 + Math.random()*0.12,
+    size: 4 + Math.random()*5,
+    color: colors[Math.floor(Math.random()*colors.length)],
+    rot: Math.random()*Math.PI, vr: (Math.random()-0.5)*0.3,
+    life: 0
+  }));
+  let frame = 0;
+  function tick(){
+    frame++;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    let alive = false;
+    parts.forEach(p=>{
+      p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life++;
+      if(p.y < canvas.height + 20) alive = true;
+      ctx.save();
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - p.life/95);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
+      ctx.restore();
+    });
+    if(alive && frame < 140) requestAnimationFrame(tick);
+    else canvas.remove();
+  }
+  tick();
 }
 /* ================= AVATAR HANDLING ================= */
 let pendingAvatarDataUrl = null;
@@ -762,11 +903,14 @@ function launchApp(isRestore){
 
   state.membersRef = state.db.ref(`groups/${state.groupId}/members`);
   state.meRef = state.membersRef.child(state.myId);
+  state.destRef = state.db.ref(`groups/${state.groupId}/destinations`);
 
   state.meRef.onDisconnect().remove();
+  state.destRef.child(state.myId).onDisconnect().remove();
 
   initMap();
   listenMembers();
+  listenDestinations();
   startWatch();
 }
 
@@ -797,6 +941,8 @@ function startWatch(){
       if(!state.firstFix){
         state.firstFix = true;
         state.map.setView([pos.coords.latitude, pos.coords.longitude], 16, {animate:true});
+      } else if(state.followMe){
+        state.map.panTo([pos.coords.latitude, pos.coords.longitude], {animate:true, duration:0.6});
       }
       renderAll();
     },
@@ -805,7 +951,7 @@ function startWatch(){
       if(err.code === 1) toast('Location permission denied — enable it to share your position.', 'error');
       else toast('Could not get your location: ' + err.message, 'error');
     },
-    { enableHighAccuracy:true, maximumAge:3000, timeout:15000 }
+    { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
   );
 }
 
@@ -818,13 +964,48 @@ function listenMembers(){
   });
 }
 
+function listenDestinations(){
+  state.destRef.on('value', (snap)=>{
+    state.destinations = snap.val() || {};
+    renderDestinations();
+    renderSidebar();
+  });
+}
+
 /* ================= MAP ================= */
+const TILE_STYLES = {
+  dark: { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attribution:'&copy; OpenStreetMap &copy; CARTO', subdomains:'abcd', maxZoom:20 },
+  satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution:'Tiles &copy; Esri', maxZoom:19 }
+};
 function initMap(){
   state.map = L.map('map', { zoomControl:false, attributionControl:true }).setView([20,0], 3);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution:'&copy; OpenStreetMap &copy; CARTO',
-    subdomains:'abcd', maxZoom:20
-  }).addTo(state.map);
+  setMapStyle('dark');
+  state.map.on('click', onMapClick);
+  state.map.on('dragstart', ()=>{
+    if(state.followMe){ state.followMe = false; syncFollowBtn(); }
+  });
+}
+function setMapStyle(style){
+  if(state.tileLayer) state.map.removeLayer(state.tileLayer);
+  const cfg = TILE_STYLES[style] || TILE_STYLES.dark;
+  state.tileLayer = L.tileLayer(cfg.url, { attribution:cfg.attribution, subdomains:cfg.subdomains||'abc', maxZoom:cfg.maxZoom }).addTo(state.map);
+  state.mapStyle = style;
+}
+function onMapClick(e){
+  if(!state.pickingDestination) return;
+  setMyDestination(e.latlng.lat, e.latlng.lng);
+  state.pickingDestination = false;
+  document.getElementById('map').classList.remove('picking');
+  document.getElementById('btn-dest').classList.remove('on');
+  toast('Destination set 🎯', 'success');
+}
+function setMyDestination(lat, lng){
+  state.destRef.child(state.myId).set({ lat, lng, setAt: Date.now() });
+  delete state.celebrated[state.myId];
+}
+function clearMyDestination(){
+  state.destRef.child(state.myId).remove();
+  delete state.celebrated[state.myId];
 }
 
 function buildMarkerHtml(m, isMe){
@@ -832,10 +1013,14 @@ function buildMarkerHtml(m, isMe){
   const avatarInner = m.avatar
     ? `<img src="${m.avatar}">`
     : initials(m.name);
+  const speedKmh = (m.speed && m.speed > 0.4) ? Math.round(m.speed*3.6) : null;
+  const heading = (m.heading != null && !isNaN(m.heading)) ? m.heading : null;
   return `
     <div class="orbit-marker" style="--ring:${color}; --ring-glow:${color}88;">
       ${isMe ? '<div class="ring"></div>' : ''}
+      ${heading != null ? `<div class="heading-arrow" style="transform:translateX(-50%) rotate(${heading}deg);"></div>` : ''}
       <div class="avatar">${avatarInner}</div>
+      ${speedKmh ? `<div class="speed-badge">${speedKmh}<span>km/h</span></div>` : ''}
       <div class="label">${escapeHtml(m.name || 'Member')}${isMe ? ' · you' : ''}</div>
     </div>`;
 }
@@ -844,6 +1029,23 @@ function renderAll(){
   renderMarkers();
   renderSidebar();
   renderLines();
+  renderDestinations();
+  renderStats();
+}
+
+function animateMarker(marker, fromLL, toLL){
+  const from = fromLL, to = toLL;
+  const dLat = to.lat - from.lat, dLng = to.lng - from.lng;
+  if(Math.abs(dLat) < 1e-9 && Math.abs(dLng) < 1e-9) return;
+  const start = performance.now();
+  function step(now){
+    const t = Math.min(1, (now-start)/MARKER_ANIM_MS);
+    const ease = 1 - Math.pow(1-t, 3);
+    marker.setLatLng([from.lat + dLat*ease, from.lng + dLng*ease]);
+    if(t < 1) marker._orbitAnim = requestAnimationFrame(step);
+  }
+  if(marker._orbitAnim) cancelAnimationFrame(marker._orbitAnim);
+  marker._orbitAnim = requestAnimationFrame(step);
 }
 
 function renderMarkers(){
@@ -858,16 +1060,42 @@ function renderMarkers(){
       html: buildMarkerHtml(m, isMe),
       className:'', iconSize:[40,40], iconAnchor:[20,20]
     });
+    const newLL = L.latLng(m.lat, m.lng);
     if(state.markers[id]){
-      state.markers[id].setLatLng([m.lat, m.lng]);
+      const prev = state.prevPositions[id];
       state.markers[id].setIcon(icon);
+      if(prev) animateMarker(state.markers[id], prev, newLL);
+      else state.markers[id].setLatLng(newLL);
     } else {
-      state.markers[id] = L.marker([m.lat, m.lng], {icon, zIndexOffset:isMe?1000:0}).addTo(state.map);
+      state.markers[id] = L.marker(newLL, {icon, zIndexOffset:isMe?1000:0}).addTo(state.map);
+    }
+    state.prevPositions[id] = newLL;
+
+    if(isMe){
+      const acc = m.accuracy || 0;
+      const tier = accuracyTier(acc);
+      if(!state.accuracyCircle){
+        state.accuracyCircle = L.circle(newLL, { radius:acc, color:tier.color, weight:1, fillColor:tier.color, fillOpacity:0.08, opacity:0.35, interactive:false }).addTo(state.map);
+      } else {
+        state.accuracyCircle.setLatLng(newLL);
+        state.accuracyCircle.setRadius(acc);
+        state.accuracyCircle.setStyle({ color:tier.color, fillColor:tier.color });
+      }
+      updateAccuracyChip(acc, tier);
     }
   });
   Object.keys(state.markers).forEach(id=>{
-    if(!seen.has(id)){ state.map.removeLayer(state.markers[id]); delete state.markers[id]; }
+    if(!seen.has(id)){ state.map.removeLayer(state.markers[id]); delete state.markers[id]; delete state.prevPositions[id]; }
   });
+}
+
+function updateAccuracyChip(acc, tier){
+  const chip = document.getElementById('gps-chip');
+  if(!chip) return;
+  chip.style.display = 'flex';
+  chip.querySelector('.gps-dot').style.background = tier.color;
+  chip.querySelector('.gps-dot').style.boxShadow = `0 0 8px ${tier.color}`;
+  chip.querySelector('.gps-text').textContent = `±${Math.round(acc)}m · ${tier.label}`;
 }
 
 function renderLines(){
@@ -896,6 +1124,89 @@ function renderLines(){
   }
 }
 
+function renderDestinations(){
+  const seen = new Set();
+  Object.entries(state.destinations).forEach(([id, d])=>{
+    const m = state.members[id];
+    if(!d || d.lat == null || !m) return;
+    seen.add(id);
+    const color = m.color || '#00e5ff';
+    const isMe = id === state.myId;
+
+    const icon = L.divIcon({
+      html: `<div class="dest-marker" style="--ring:${color};"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 33C13 33 24 20.4 24 12.5C24 6.15 19.18 1 13 1C6.82 1 2 6.15 2 12.5C2 20.4 13 33 13 33Z" fill="${color}" stroke="#070a12" stroke-width="1.5"/><circle cx="13" cy="12.5" r="4.5" fill="#070a12"/></svg></div>`,
+      className:'', iconSize:[26,34], iconAnchor:[13,34]
+    });
+    if(state.destMarkers[id]){
+      state.destMarkers[id].setLatLng([d.lat, d.lng]);
+      state.destMarkers[id].setIcon(icon);
+    } else {
+      state.destMarkers[id] = L.marker([d.lat, d.lng], {icon, zIndexOffset:500}).addTo(state.map);
+      state.destMarkers[id].on('click', ()=>{
+        if(isMe){
+          if(confirm('Clear your destination pin?')) clearMyDestination();
+        }
+      });
+    }
+
+    // line + distance/eta from member to their destination
+    if(state.destLines[id]) state.map.removeLayer(state.destLines[id]);
+    if(state.destLabels[id]) state.map.removeLayer(state.destLabels[id]);
+    if(m.lat != null){
+      state.destLines[id] = L.polyline([[m.lat,m.lng],[d.lat,d.lng]], {
+        color, weight:2, opacity:0.55, dashArray:'2,7'
+      }).addTo(state.map);
+
+      const dist = haversine(m.lat, m.lng, d.lat, d.lng);
+      const midLat = (m.lat+d.lat)/2, midLng = (m.lng+d.lng)/2;
+      state.destLabels[id] = L.marker([midLat, midLng], {
+        icon: L.divIcon({ html:`<div class="dist-chip" style="border-color:${color}88; color:${color};">🎯 ${fmtDist(dist)} · ${fmtEta(dist, m.speed)}</div>`, className:'', iconSize:[0,0] }),
+        interactive:false
+      }).addTo(state.map);
+
+      // arrival detection
+      state.prevDestDist = state.prevDestDist || {};
+      state.prevDestDist[id] = dist;
+      if(dist <= ARRIVAL_RADIUS_M && !state.celebrated[id]){
+        state.celebrated[id] = true;
+        toast(`🎉 ${m.name || 'A member'} arrived at their destination!`, 'success');
+        burstConfetti();
+        playChime([523,659,784]);
+        if(isMe) setTimeout(clearMyDestination, 1800);
+      }
+    }
+  });
+  Object.keys(state.destMarkers).forEach(id=>{
+    if(!seen.has(id)){
+      state.map.removeLayer(state.destMarkers[id]); delete state.destMarkers[id];
+      if(state.destLines[id]){ state.map.removeLayer(state.destLines[id]); delete state.destLines[id]; }
+      if(state.destLabels[id]){ state.map.removeLayer(state.destLabels[id]); delete state.destLabels[id]; }
+      delete state.celebrated[id];
+    }
+  });
+}
+
+function renderStats(){
+  const box = document.getElementById('stats-strip');
+  if(!box) return;
+  const entries = Object.entries(state.members).filter(([id,m])=>m.lat!=null);
+  if(entries.length < 2){ box.style.display = 'none'; return; }
+
+  let minPair = null, minD = Infinity, maxD = 0;
+  for(let i=0;i<entries.length;i++){
+    for(let j=i+1;j<entries.length;j++){
+      const d = haversine(entries[i][1].lat, entries[i][1].lng, entries[j][1].lat, entries[j][1].lng);
+      if(d < minD){ minD = d; minPair = [entries[i][1].name, entries[j][1].name]; }
+      if(d > maxD) maxD = d;
+    }
+  }
+  box.style.display = 'flex';
+  box.innerHTML = `
+    <div class="stat-item"><span class="stat-dot" style="background:var(--success)"></span>Closest: <b>${escapeHtml(minPair[0]||'?')} ↔ ${escapeHtml(minPair[1]||'?')}</b> · ${fmtDist(minD)}</div>
+    <div class="stat-sep"></div>
+    <div class="stat-item"><span class="stat-dot" style="background:var(--violet)"></span>Group spread: <b>${fmtDist(maxD)}</b></div>`;
+}
+
 function renderSidebar(){
   const list = document.getElementById('members-list');
   const entries = Object.entries(state.members).filter(([id,m])=>m.lat!=null);
@@ -922,16 +1233,34 @@ function renderSidebar(){
       distHtml = `<div class="m-dist"><b>${fmtDist(d)}</b><span>away</span></div>`;
     }
     const avatarInner = m.avatar ? `<img src="${m.avatar}">` : initials(m.name);
+    const speedKmh = (m.speed && m.speed > 0.4) ? Math.round(m.speed*3.6)+' km/h' : (age < STALE_MS ? 'stationary' : '');
+    let metaText = age < STALE_MS ? (speedKmh || 'live') : fmtAgo(m.updatedAt);
+    if(isMe && m.accuracy){ metaText += ` · ±${Math.round(m.accuracy)}m`; }
+
+    const dest = state.destinations[id];
+    let destHtml = '';
+    if(dest && dest.lat != null){
+      const dd = haversine(m.lat, m.lng, dest.lat, dest.lng);
+      destHtml = `
+        <div class="dest-row">
+          <span>🎯 ${fmtDist(dd)} to go · ETA ${fmtEta(dd, m.speed)}</span>
+          ${isMe ? `<span class="dest-clear" data-clear-dest="1">Clear</span>` : ''}
+        </div>`;
+    }
     return `
       <div class="member-card ${isMe?'me':''}">
         <div class="m-avatar" style="--ring:${m.color||'#00e5ff'}">${avatarInner}<span class="m-status ${statusClass}"></span></div>
         <div class="m-info">
           <div class="m-name">${escapeHtml(m.name||'Member')} ${isMe?'<span class="you-tag">YOU</span>':''}</div>
-          <div class="m-meta">${age < STALE_MS ? 'live' : fmtAgo(m.updatedAt)}</div>
+          <div class="m-meta">${metaText}</div>
+          ${destHtml}
         </div>
         ${distHtml}
       </div>`;
   }).join('');
+  list.querySelectorAll('[data-clear-dest]').forEach(elx=>{
+    elx.addEventListener('click', (e)=>{ e.stopPropagation(); clearMyDestination(); });
+  });
 }
 
 /* ================= CONTROLS ================= */
@@ -954,6 +1283,37 @@ document.getElementById('btn-lines').addEventListener('click', function(){
   renderLines();
 });
 document.getElementById('btn-lines').classList.add('on');
+
+document.getElementById('btn-follow').addEventListener('click', function(){
+  state.followMe = !state.followMe;
+  syncFollowBtn();
+  if(state.followMe && state.myPos){
+    state.map.setView([state.myPos.coords.latitude, state.myPos.coords.longitude], 17, {animate:true});
+    toast('Follow mode on — map will track you', 'success');
+  }
+});
+function syncFollowBtn(){
+  document.getElementById('btn-follow').classList.toggle('on', state.followMe);
+}
+
+document.getElementById('btn-dest').addEventListener('click', function(){
+  state.pickingDestination = !state.pickingDestination;
+  this.classList.toggle('on', state.pickingDestination);
+  document.getElementById('map').classList.toggle('picking', state.pickingDestination);
+  if(state.pickingDestination) toast('Tap anywhere on the map to drop your destination pin');
+});
+
+document.getElementById('btn-style').addEventListener('click', function(){
+  setMapStyle(state.mapStyle === 'dark' ? 'satellite' : 'dark');
+  this.classList.toggle('on', state.mapStyle === 'satellite');
+});
+
+document.getElementById('btn-mute').addEventListener('click', function(){
+  state.muted = !state.muted;
+  this.classList.toggle('on', state.muted);
+  document.getElementById('mute-waves').style.display = state.muted ? 'none' : 'block';
+  toast(state.muted ? 'Sound muted' : 'Sound on');
+});
 
 document.getElementById('btn-toggle-sidebar').addEventListener('click', function(){
   const sb = document.getElementById('sidebar');
@@ -984,6 +1344,7 @@ document.getElementById('btn-leave').addEventListener('click', ()=>{
   try{
     if(state.watchId) navigator.geolocation.clearWatch(state.watchId);
     if(state.meRef) state.meRef.remove();
+    if(state.destRef) state.destRef.child(state.myId).remove();
   }catch(e){}
   clearSession();
   location.hash = '';
