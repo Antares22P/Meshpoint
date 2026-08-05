@@ -399,6 +399,42 @@
     white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,.4);
   }
 
+  /* proximity link (auto-connect when members are close by) */
+  .leaflet-overlay-pane path.link-beam{
+    stroke-dasharray:7 7; filter:drop-shadow(0 0 5px rgba(62,230,168,.65));
+    animation:beamFlow 0.9s linear infinite;
+  }
+  @keyframes beamFlow{ to{ stroke-dashoffset:-28; } }
+  .link-hub{ position:relative; width:0; height:0; }
+  .link-hub-core{
+    position:absolute; top:-5px; left:-5px; width:10px; height:10px; border-radius:50%;
+    background:var(--success); box-shadow:0 0 12px var(--success);
+  }
+  .link-hub-ring{
+    position:absolute; top:-5px; left:-5px; width:10px; height:10px; border-radius:50%;
+    border:2px solid var(--success); animation:markerPulse 1.5s ease-out infinite;
+  }
+  .link-hub-chip{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%); white-space:nowrap;
+    background:rgba(7,10,18,.9); border:1px solid rgba(62,230,168,.45); color:var(--success);
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; padding:2px 8px; border-radius:8px;
+    box-shadow:0 3px 10px rgba(0,0,0,.4);
+  }
+  .orbit-marker .link-badge{
+    position:absolute; top:-3px; left:-3px; width:13px; height:13px; border-radius:50%; z-index:4;
+    background:var(--success); border:2px solid var(--bg-2); box-shadow:0 0 8px var(--success);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .orbit-marker .link-badge::after{
+    content:""; position:absolute; inset:-3px; border-radius:50%; border:1.5px solid var(--success);
+    animation:pulseRing 1.6s ease-out infinite;
+  }
+  .m-avatar.linked{ box-shadow:0 0 0 3px rgba(62,230,168,.35); }
+  .m-avatar .link-dot{
+    position:absolute; top:-2px; left:-2px; width:9px; height:9px; border-radius:50%;
+    background:var(--success); border:2px solid var(--surface-solid); box-shadow:0 0 6px var(--success);
+  }
+
   /* ================= RESPONSIVE — TABLET / MOBILE ================= */
   @media (max-width:900px){
     #sidebar{width:280px;}
@@ -608,9 +644,9 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="lbl">Fit All</span>
     </div>
-    <div class="ctrl-btn" id="btn-lines" title="Toggle distance lines">
+    <div class="ctrl-btn" id="btn-lines" title="Toggle distance mesh lines">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="19" r="2" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="5" r="2" stroke="currentColor" stroke-width="2"/><path d="M6.5 17.5l11-11" stroke="currentColor" stroke-width="2"/></svg>
-      <span class="lbl">Links</span>
+      <span class="lbl">Mesh</span>
     </div>
     <div class="ctrl-sep"></div>
     <div class="ctrl-btn" id="btn-dest" title="Set your destination">
@@ -654,11 +690,11 @@
    to see or type it.
    ================================================================ */
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCW0DasqEJk7GVmQDJbxNeVO-LDWmni_RA",
-  authDomain: "orbitpoint-c9ee5.firebaseapp.com",
-  databaseURL: "https://orbitpoint-c9ee5-default-rtdb.firebaseio.com",
-  projectId: "orbitpoint-c9ee5",
-  appId: "1:377856134157:web:6fb2d2fe8d10cc5f261944"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID",
+  appId: "YOUR_APP_ID"
 };
 
 /* ================= CONSTANTS ================= */
@@ -670,6 +706,8 @@ const CONFIG_READY = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('Y
 const ARRIVAL_RADIUS_M = 30;     // considered "arrived" within this many meters
 const MARKER_ANIM_MS = 550;      // smooth glide duration between position fixes
 const WALK_SPEED_MPS = 1.35;     // ~4.9 km/h, used for ETA fallback
+const LINK_CONNECT_M = 50;       // members auto-"link" once within this range
+const LINK_BREAK_M = 75;         // link breaks once further than this (hysteresis avoids flicker)
 
 let state = {
   firebaseConfig: FIREBASE_CONFIG, groupId:null, groupName:null,
@@ -681,7 +719,8 @@ let state = {
   destinations:{}, destMarkers:{}, destLines:{}, destLabels:{},
   pickingDestination:false, followMe:false, muted:false,
   celebrated:{}, tileLayer:null, mapStyle:'dark', accuracyCircle:null,
-  statsEl:null
+  statsEl:null,
+  links:{}, linksSeeded:false, linkedMemberIds:new Set(), linkHubs:{}
 };
 
 /* ================= UTIL ================= */
@@ -1115,27 +1154,31 @@ function clearMyDestination(){
   delete state.celebrated[state.myId];
 }
 
-function buildMarkerHtml(m, isMe){
+function buildMarkerHtml(id, m, isMe){
   const color = m.color || '#00e5ff';
   const avatarInner = m.avatar
     ? `<img src="${m.avatar}">`
     : initials(m.name);
   const speedKmh = (m.speed && m.speed > 0.4) ? Math.round(m.speed*3.6) : null;
   const heading = (m.heading != null && !isNaN(m.heading)) ? m.heading : null;
+  const isLinked = state.linkedMemberIds.has(id);
   return `
     <div class="orbit-marker" style="--ring:${color}; --ring-glow:${color}88;">
       ${isMe ? '<div class="ring"></div>' : ''}
       ${heading != null ? `<div class="heading-arrow" style="transform:translateX(-50%) rotate(${heading}deg);"></div>` : ''}
       <div class="avatar">${avatarInner}</div>
+      ${isLinked ? '<div class="link-badge"></div>' : ''}
       ${speedKmh ? `<div class="speed-badge">${speedKmh}<span>km/h</span></div>` : ''}
       <div class="label">${escapeHtml(m.name || 'Member')}${isMe ? ' · you' : ''}</div>
     </div>`;
 }
 
 function renderAll(){
+  computeLinks();
   renderMarkers();
   renderSidebar();
   renderLines();
+  renderLinkBeams();
   renderDestinations();
   renderStats();
 }
@@ -1164,7 +1207,7 @@ function renderMarkers(){
     seen.add(id);
     const isMe = id === state.myId;
     const icon = L.divIcon({
-      html: buildMarkerHtml(m, isMe),
+      html: buildMarkerHtml(id, m, isMe),
       className:'', iconSize:[40,40], iconAnchor:[20,20]
     });
     const newLL = L.latLng(m.lat, m.lng);
@@ -1205,6 +1248,94 @@ function updateAccuracyChip(acc, tier){
   chip.querySelector('.gps-text').textContent = `±${Math.round(acc)}m · ${tier.label}`;
 }
 
+function linkKey(id1,id2){ return id1 < id2 ? id1+'|'+id2 : id2+'|'+id1; }
+
+function vibrate(pattern){
+  try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){}
+}
+
+function handleLinkChange(id1, id2, connected, dist){
+  const m1 = state.members[id1], m2 = state.members[id2];
+  if(!m1 || !m2) return;
+  const n1 = m1.name || 'A member', n2 = m2.name || 'A member';
+  const involvesMe = (id1 === state.myId || id2 === state.myId);
+  if(connected){
+    if(involvesMe){
+      const other = id1 === state.myId ? n2 : n1;
+      toast(`🟢 Proximity link with ${other} — ${fmtDist(dist)} apart`, 'success');
+      vibrate([35,25,35]);
+    }
+  } else {
+    // out-of-range: this is the "everyone feels it" alert
+    toast(`📡 ${n1} and ${n2} moved out of proximity range (${fmtDist(dist)})`, 'error');
+    vibrate([260,110,260,110,260]);
+  }
+}
+
+function computeLinks(){
+  const entries = Object.entries(state.members).filter(([id,m])=> m.lat!=null && m.lng!=null);
+  const activeKeys = new Set();
+  const linkedIds = new Set();
+
+  for(let i=0;i<entries.length;i++){
+    for(let j=i+1;j<entries.length;j++){
+      const [id1,m1] = entries[i], [id2,m2] = entries[j];
+      const key = linkKey(id1,id2);
+      const dist = haversine(m1.lat,m1.lng,m2.lat,m2.lng);
+      const prevLinked = state.links[key] === true;
+      let nowLinked = prevLinked;
+      if(!prevLinked && dist <= LINK_CONNECT_M) nowLinked = true;
+      else if(prevLinked && dist > LINK_BREAK_M) nowLinked = false;
+
+      if(nowLinked){ activeKeys.add(key); linkedIds.add(id1); linkedIds.add(id2); }
+
+      if(state.linksSeeded && nowLinked !== prevLinked){
+        handleLinkChange(id1, id2, nowLinked, dist);
+      }
+      state.links[key] = nowLinked;
+    }
+  }
+  // drop keys referencing members who are no longer in the group
+  Object.keys(state.links).forEach(k=>{
+    const [a,b] = k.split('|');
+    if(!state.members[a] || !state.members[b]) delete state.links[k];
+  });
+  state.linkedMemberIds = linkedIds;
+  state.linksSeeded = true;
+}
+
+function renderLinkBeams(){
+  Object.keys(state.linkHubs).forEach(k=>{
+    state.map.removeLayer(state.linkHubs[k].beam);
+    state.map.removeLayer(state.linkHubs[k].hub);
+  });
+  state.linkHubs = {};
+
+  const entries = state.members;
+  Object.keys(state.links).forEach(key=>{
+    if(state.links[key] !== true) return;
+    const [id1,id2] = key.split('|');
+    const m1 = entries[id1], m2 = entries[id2];
+    if(!m1 || !m2 || m1.lat==null || m2.lat==null) return;
+    const dist = haversine(m1.lat,m1.lng,m2.lat,m2.lng);
+
+    const beam = L.polyline([[m1.lat,m1.lng],[m2.lat,m2.lng]], {
+      color:'#3ee6a8', weight:3, opacity:0.85, className:'link-beam'
+    }).addTo(state.map);
+
+    const midLat = (m1.lat+m2.lat)/2, midLng = (m1.lng+m2.lng)/2;
+    const hub = L.marker([midLat, midLng], {
+      icon: L.divIcon({
+        html:`<div class="link-hub"><div class="link-hub-ring"></div><div class="link-hub-core"></div><div class="link-hub-chip">🟢 ${fmtDist(dist)}</div></div>`,
+        className:'', iconSize:[0,0]
+      }),
+      interactive:false, zIndexOffset:900
+    }).addTo(state.map);
+
+    state.linkHubs[key] = {beam, hub};
+  });
+}
+
 function renderLines(){
   state.lines.forEach(l=>state.map.removeLayer(l));
   state.lineLabels.forEach(l=>state.map.removeLayer(l));
@@ -1215,6 +1346,7 @@ function renderLines(){
   for(let i=0;i<entries.length;i++){
     for(let j=i+1;j<entries.length;j++){
       const [id1,m1] = entries[i], [id2,m2] = entries[j];
+      if(state.links[linkKey(id1,id2)] === true) continue; // shown as a green link beam instead
       const line = L.polyline([[m1.lat,m1.lng],[m2.lat,m2.lng]], {
         color:'#00e5ff', weight:1.4, opacity:0.35, dashArray:'4,6'
       }).addTo(state.map);
@@ -1307,11 +1439,13 @@ function renderStats(){
       if(d > maxD) maxD = d;
     }
   }
+  const linkCount = Object.values(state.links).filter(v=>v===true).length;
   box.style.display = 'flex';
   box.innerHTML = `
     <div class="stat-item"><span class="stat-dot" style="background:var(--success)"></span>Closest: <b>${escapeHtml(minPair[0]||'?')} ↔ ${escapeHtml(minPair[1]||'?')}</b> · ${fmtDist(minD)}</div>
     <div class="stat-sep"></div>
-    <div class="stat-item"><span class="stat-dot" style="background:var(--violet)"></span>Group spread: <b>${fmtDist(maxD)}</b></div>`;
+    <div class="stat-item"><span class="stat-dot" style="background:var(--violet)"></span>Group spread: <b>${fmtDist(maxD)}</b></div>
+    ${linkCount>0 ? `<div class="stat-sep"></div><div class="stat-item"><span class="stat-dot" style="background:var(--success)"></span>🟢 <b>${linkCount}</b> active link${linkCount>1?'s':''}</div>` : ''}`;
 }
 
 function renderSidebar(){
@@ -1343,6 +1477,8 @@ function renderSidebar(){
     const speedKmh = (m.speed && m.speed > 0.4) ? Math.round(m.speed*3.6)+' km/h' : (age < STALE_MS ? 'stationary' : '');
     let metaText = age < STALE_MS ? (speedKmh || 'live') : fmtAgo(m.updatedAt);
     if(isMe && m.accuracy){ metaText += ` · ±${Math.round(m.accuracy)}m`; }
+    const isLinked = state.linkedMemberIds.has(id);
+    if(isLinked) metaText += ' · 🟢 linked';
 
     const dest = state.destinations[id];
     let destHtml = '';
@@ -1356,7 +1492,7 @@ function renderSidebar(){
     }
     return `
       <div class="member-card ${isMe?'me':''}">
-        <div class="m-avatar" style="--ring:${m.color||'#00e5ff'}">${avatarInner}<span class="m-status ${statusClass}"></span></div>
+        <div class="m-avatar ${isLinked?'linked':''}" style="--ring:${m.color||'#00e5ff'}">${avatarInner}<span class="m-status ${statusClass}"></span>${isLinked?'<span class="link-dot"></span>':''}</div>
         <div class="m-info">
           <div class="m-name">${escapeHtml(m.name||'Member')} ${isMe?'<span class="you-tag">YOU</span>':''}</div>
           <div class="m-meta">${metaText}</div>
