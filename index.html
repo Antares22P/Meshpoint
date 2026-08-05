@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#070a12">
-<title>ORBIT — Live Group Tracker</title>
+<title>ORBIT Group</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -735,10 +735,7 @@ async function updateOSRMRoute(memberId){
     if(!me || !other) return;
 
     try{
-        const url =
-            `https://router.project-osrm.org/route/v1/driving/` +
-            `${me.lng},${me.lat};${other.lng},${other.lat}` +
-            `?overview=full&geometries=geojson`;
+        const url = const url = `https://router.project-osrm.org/route/v1/driving/${me.lng},${me.lat};${other.lng},${other.lat}?overview=full&geometries=geojson`;
 
         const res = await fetch(url);
         const data = await res.json();
