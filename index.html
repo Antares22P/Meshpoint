@@ -682,13 +682,6 @@
 (function(){
 "use strict";
 
-/* ================================================================
-   FIREBASE CONFIG — fill this in ONCE with your own project's
-   values (console.firebase.google.com → Project settings → your
-   web app → SDK config). Realtime Database must be enabled.
-   This is baked into the code so nobody using the app ever has
-   to see or type it.
-   ================================================================ */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCHgOG2uCJG9m9PXA3n5PdChbgGcZOJlpY",
   authDomain: "orbitfriends.firebaseapp.com",
@@ -759,6 +752,34 @@ async function updateOSRMRoute(memberId){
     }catch(e){
         console.log(e);
     }
+}
+
+
+  function startNavigation(memberId){
+
+    selectedMemberId = memberId;
+
+    updateOSRMRoute(memberId);
+
+    clearInterval(osrmTimer);
+
+    osrmTimer = setInterval(()=>{
+        updateOSRMRoute(memberId);
+    },10000);
+
+}
+
+
+  function stopNavigation(){
+
+    clearInterval(osrmTimer);
+    osrmTimer = null;
+
+    if(osrmRouteLine){
+        state.map.removeLayer(osrmRouteLine);
+        osrmRouteLine = null;
+    }
+
 }
   
 function toast(msg, type){
