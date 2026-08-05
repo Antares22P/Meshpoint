@@ -730,7 +730,7 @@ let state = {
   celebrated:{}, tileLayer:null, mapStyle:'dark', accuracyCircle:null,
   statsEl:null,
   links:{}, linksSeeded:false, linkedMemberIds:new Set(), linkHubs:{},
-  destRoutes:{} // id -> {latlngs, distance, duration, fetchedAt, originLat, originLng, destLat, destLng, fetching, ok}
+  destRoutes:{} // routeKey (destId__memberId) -> {latlngs, distance, duration, fetchedAt, originLat, originLng, destLat, destLng, fetching, ok}
 };
 
 /* ================= UTIL ================= */
@@ -1163,15 +1163,21 @@ function onMapClick(e){
   document.getElementById('btn-dest').classList.remove('on');
   toast('Destination set 🎯', 'success');
 }
+function clearRoutesForDest(destId){
+  const prefix = destId + '__';
+  Object.keys(state.destRoutes).forEach(k=>{
+    if(k.indexOf(prefix) === 0) delete state.destRoutes[k];
+  });
+}
 function setMyDestination(lat, lng){
   state.destRef.child(state.myId).set({ lat, lng, setAt: Date.now() });
   delete state.celebrated[state.myId];
-  delete state.destRoutes[state.myId]; // force a fresh route for the new pin
+  clearRoutesForDest(state.myId); // force fresh routes from every member to the new pin
 }
 function clearMyDestination(){
   state.destRef.child(state.myId).remove();
   delete state.celebrated[state.myId];
-  delete state.destRoutes[state.myId];
+  clearRoutesForDest(state.myId);
 }
 
 function buildMarkerHtml(id, m, isMe){
@@ -1385,10 +1391,14 @@ function renderLines(){
 
 /* ================= OSRM ROUTING ================= */
 
-// Decide whether a member's cached route to their destination is stale
-// enough to warrant a fresh OSRM lookup.
-function shouldRefreshRoute(id, originLat, originLng, destLat, destLng){
-  const cache = state.destRoutes[id];
+// Composite key so we can cache a distinct route per (destination, member) pair —
+// every member now gets their own route to any destination pin, not just the owner.
+function destRouteKey(destId, memberId){ return destId + '__' + memberId; }
+
+// Decide whether a cached route (destId__memberId) is stale enough to warrant
+// a fresh OSRM lookup.
+function shouldRefreshRoute(routeKey, originLat, originLng, destLat, destLng){
+  const cache = state.destRoutes[routeKey];
   if(!cache) return true;
   if(cache.fetching) return false;
   // destination changed → always refresh
@@ -1399,11 +1409,12 @@ function shouldRefreshRoute(id, originLat, originLng, destLat, destLng){
   return moved >= ROUTE_REFRESH_DIST_M;
 }
 
-// Fetch the shortest walkable path between a member and their destination
-// from OSRM, decode the GeoJSON geometry into Leaflet latlngs, and cache it.
-async function fetchOsrmRoute(id, originLat, originLng, destLat, destLng){
-  const prior = state.destRoutes[id];
-  state.destRoutes[id] = Object.assign({}, prior, {
+// Fetch the shortest walkable path between a member and a destination pin
+// from OSRM, decode the GeoJSON geometry into Leaflet latlngs, and cache it
+// under the composite destId__memberId key.
+async function fetchOsrmRoute(routeKey, originLat, originLng, destLat, destLng){
+  const prior = state.destRoutes[routeKey];
+  state.destRoutes[routeKey] = Object.assign({}, prior, {
     fetching:true, originLat, originLng, destLat, destLng
   });
 
@@ -1419,21 +1430,21 @@ async function fetchOsrmRoute(id, originLat, originLng, destLat, destLng){
     if(data.code === 'Ok' && data.routes && data.routes[0]){
       const route = data.routes[0];
       const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
-      state.destRoutes[id] = {
+      state.destRoutes[routeKey] = {
         latlngs, distance: route.distance, duration: route.duration,
         fetchedAt: Date.now(), originLat, originLng, destLat, destLng,
         fetching:false, ok:true
       };
     } else {
-      state.destRoutes[id] = {
+      state.destRoutes[routeKey] = {
         fetchedAt: Date.now(), originLat, originLng, destLat, destLng,
         fetching:false, ok:false
       };
     }
   }catch(e){
     clearTimeout(timeout);
-    console.warn('OSRM route fetch failed for', id, e);
-    state.destRoutes[id] = Object.assign({}, state.destRoutes[id], {
+    console.warn('OSRM route fetch failed for', routeKey, e);
+    state.destRoutes[routeKey] = Object.assign({}, state.destRoutes[routeKey], {
       fetching:false, ok:false, fetchedAt:Date.now(), originLat, originLng, destLat, destLng
     });
   }
@@ -1442,41 +1453,52 @@ async function fetchOsrmRoute(id, originLat, originLng, destLat, destLng){
 }
 
 function renderDestinations(){
-  const seen = new Set();
-  Object.entries(state.destinations).forEach(([id, d])=>{
-    const m = state.members[id];
-    if(!d || d.lat == null || !m) return;
-    seen.add(id);
-    const color = m.color || '#00e5ff';
-    const isMe = id === state.myId;
+  const seenDest = new Set();
+  Object.entries(state.destinations).forEach(([destId, d])=>{
+    const owner = state.members[destId];
+    if(!d || d.lat == null || !owner) return;
+    seenDest.add(destId);
+    const ownerColor = owner.color || '#00e5ff';
+    const isMineDest = destId === state.myId;
 
+    // destination pin (one marker per destination, drawn once)
     const icon = L.divIcon({
-      html: `<div class="dest-marker" style="--ring:${color};"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 33C13 33 24 20.4 24 12.5C24 6.15 19.18 1 13 1C6.82 1 2 6.15 2 12.5C2 20.4 13 33 13 33Z" fill="${color}" stroke="#070a12" stroke-width="1.5"/><circle cx="13" cy="12.5" r="4.5" fill="#070a12"/></svg></div>`,
+      html: `<div class="dest-marker" style="--ring:${ownerColor};"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 33C13 33 24 20.4 24 12.5C24 6.15 19.18 1 13 1C6.82 1 2 6.15 2 12.5C2 20.4 13 33 13 33Z" fill="${ownerColor}" stroke="#070a12" stroke-width="1.5"/><circle cx="13" cy="12.5" r="4.5" fill="#070a12"/></svg></div>`,
       className:'', iconSize:[26,34], iconAnchor:[13,34]
     });
-    if(state.destMarkers[id]){
-      state.destMarkers[id].setLatLng([d.lat, d.lng]);
-      state.destMarkers[id].setIcon(icon);
+    if(state.destMarkers[destId]){
+      state.destMarkers[destId].setLatLng([d.lat, d.lng]);
+      state.destMarkers[destId].setIcon(icon);
     } else {
-      state.destMarkers[id] = L.marker([d.lat, d.lng], {icon, zIndexOffset:500}).addTo(state.map);
-      state.destMarkers[id].on('click', ()=>{
-        if(isMe){
+      state.destMarkers[destId] = L.marker([d.lat, d.lng], {icon, zIndexOffset:500}).addTo(state.map);
+      state.destMarkers[destId].on('click', ()=>{
+        if(isMineDest){
           if(confirm('Clear your destination pin?')) clearMyDestination();
         }
       });
     }
 
-    // line + distance/eta from member to their destination — follows the
-    // actual shortest walkable path via OSRM when a route is available,
-    // falling back to a straight line while it loads or if OSRM fails.
-    if(state.destLines[id]) state.map.removeLayer(state.destLines[id]);
-    if(state.destLabels[id]) state.map.removeLayer(state.destLabels[id]);
-    if(m.lat != null){
-      if(shouldRefreshRoute(id, m.lat, m.lng, d.lat, d.lng)){
-        fetchOsrmRoute(id, m.lat, m.lng, d.lat, d.lng);
+    if(!state.destLines[destId]) state.destLines[destId] = {};
+    if(!state.destLabels[destId]) state.destLabels[destId] = {};
+
+    // Compute + draw the shortest walkable route from EVERY member to this
+    // destination pin (not just the member who dropped it), each in that
+    // member's own color, with distance/ETA labels along each path.
+    const seenMembers = new Set();
+    Object.entries(state.members).forEach(([memberId, m])=>{
+      if(m.lat == null || m.lng == null) return;
+      seenMembers.add(memberId);
+      const routeKey = destRouteKey(destId, memberId);
+      const memberColor = m.color || '#00e5ff';
+
+      if(state.destLines[destId][memberId]) state.map.removeLayer(state.destLines[destId][memberId]);
+      if(state.destLabels[destId][memberId]) state.map.removeLayer(state.destLabels[destId][memberId]);
+
+      if(shouldRefreshRoute(routeKey, m.lat, m.lng, d.lat, d.lng)){
+        fetchOsrmRoute(routeKey, m.lat, m.lng, d.lat, d.lng);
       }
 
-      const routeCache = state.destRoutes[id];
+      const routeCache = state.destRoutes[routeKey];
       const hasRoute = routeCache && routeCache.ok && routeCache.latlngs && routeCache.latlngs.length > 1
         && routeCache.destLat === d.lat && routeCache.destLng === d.lng;
 
@@ -1484,37 +1506,57 @@ function renderDestinations(){
       const routeDist = hasRoute ? routeCache.distance : haversine(m.lat, m.lng, d.lat, d.lng);
       const etaLabel = hasRoute ? fmtDuration(routeCache.duration) : fmtEta(routeDist, m.speed);
       const routeIcon = hasRoute ? '🚶' : '🎯';
+      const nameTag = memberId === destId ? '' : `${escapeHtml(m.name||'Member')} · `;
 
-      state.destLines[id] = L.polyline(pathLatLngs, {
-        color, weight: hasRoute ? 3.5 : 2, opacity: hasRoute ? 0.75 : 0.55,
+      state.destLines[destId][memberId] = L.polyline(pathLatLngs, {
+        color: memberColor, weight: hasRoute ? 3.5 : 2, opacity: hasRoute ? 0.75 : 0.55,
         dashArray: hasRoute ? null : '2,7', lineJoin:'round'
       }).addTo(state.map);
 
       const midPoint = pathLatLngs[Math.floor(pathLatLngs.length/2)];
-      state.destLabels[id] = L.marker(midPoint, {
-        icon: L.divIcon({ html:`<div class="dist-chip" style="border-color:${color}88; color:${color};">${routeIcon} ${fmtDist(routeDist)} · ${etaLabel}</div>`, className:'', iconSize:[0,0] }),
+      state.destLabels[destId][memberId] = L.marker(midPoint, {
+        icon: L.divIcon({ html:`<div class="dist-chip" style="border-color:${memberColor}88; color:${memberColor};">${nameTag}${routeIcon} ${fmtDist(routeDist)} · ${etaLabel}</div>`, className:'', iconSize:[0,0] }),
         interactive:false
       }).addTo(state.map);
 
-      // arrival detection uses straight-line proximity to the pin itself,
-      // independent of whatever the routed path distance says
-      const straightDist = haversine(m.lat, m.lng, d.lat, d.lng);
-      if(straightDist <= ARRIVAL_RADIUS_M && !state.celebrated[id]){
-        state.celebrated[id] = true;
-        toast(`🎉 ${m.name || 'A member'} arrived at their destination!`, 'success');
-        burstConfetti();
-        playChime([523,659,784]);
-        if(isMe) setTimeout(clearMyDestination, 1800);
+      // arrival detection: only the destination's owner reaching their own
+      // pin triggers the celebration (straight-line proximity to the pin)
+      if(memberId === destId){
+        const straightDist = haversine(m.lat, m.lng, d.lat, d.lng);
+        if(straightDist <= ARRIVAL_RADIUS_M && !state.celebrated[destId]){
+          state.celebrated[destId] = true;
+          toast(`🎉 ${m.name || 'A member'} arrived at their destination!`, 'success');
+          burstConfetti();
+          playChime([523,659,784]);
+          if(isMineDest) setTimeout(clearMyDestination, 1800);
+        }
       }
-    }
+    });
+
+    // cleanup routes/lines for members who left the group
+    Object.keys(state.destLines[destId]).forEach(memberId=>{
+      if(!seenMembers.has(memberId)){
+        state.map.removeLayer(state.destLines[destId][memberId]); delete state.destLines[destId][memberId];
+        if(state.destLabels[destId][memberId]){ state.map.removeLayer(state.destLabels[destId][memberId]); delete state.destLabels[destId][memberId]; }
+        delete state.destRoutes[destRouteKey(destId, memberId)];
+      }
+    });
   });
-  Object.keys(state.destMarkers).forEach(id=>{
-    if(!seen.has(id)){
-      state.map.removeLayer(state.destMarkers[id]); delete state.destMarkers[id];
-      if(state.destLines[id]){ state.map.removeLayer(state.destLines[id]); delete state.destLines[id]; }
-      if(state.destLabels[id]){ state.map.removeLayer(state.destLabels[id]); delete state.destLabels[id]; }
-      delete state.celebrated[id];
-      delete state.destRoutes[id];
+
+  // cleanup destinations that no longer exist
+  Object.keys(state.destMarkers).forEach(destId=>{
+    if(!seenDest.has(destId)){
+      state.map.removeLayer(state.destMarkers[destId]); delete state.destMarkers[destId];
+      if(state.destLines[destId]){
+        Object.values(state.destLines[destId]).forEach(l=> state.map.removeLayer(l));
+        delete state.destLines[destId];
+      }
+      if(state.destLabels[destId]){
+        Object.values(state.destLabels[destId]).forEach(l=> state.map.removeLayer(l));
+        delete state.destLabels[destId];
+      }
+      delete state.celebrated[destId];
+      clearRoutesForDest(destId);
     }
   });
 }
@@ -1574,10 +1616,13 @@ function renderSidebar(){
     const isLinked = state.linkedMemberIds.has(id);
     if(isLinked) metaText += ' · 🟢 linked';
 
+    // "their own" destination progress row — this member's route to the
+    // destination pin they themselves dropped (own route key: destId===id)
     const dest = state.destinations[id];
     let destHtml = '';
     if(dest && dest.lat != null){
-      const routeCache = state.destRoutes[id];
+      const routeKey = destRouteKey(id, id);
+      const routeCache = state.destRoutes[routeKey];
       const hasRoute = routeCache && routeCache.ok && routeCache.latlngs
         && routeCache.destLat === dest.lat && routeCache.destLng === dest.lng;
       const dd = hasRoute ? routeCache.distance : haversine(m.lat, m.lng, dest.lat, dest.lng);
