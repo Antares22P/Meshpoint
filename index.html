@@ -735,7 +735,10 @@ async function updateOSRMRoute(memberId){
     if(!me || !other) return;
 
     try{
-        const url = const url = `https://router.project-osrm.org/route/v1/driving/${me.lng},${me.lat};${other.lng},${other.lat}?overview=full&geometries=geojson`;
+        const url =
+            `https://router.project-osrm.org/route/v1/driving/` +
+            `${me.lng},${me.lat};${other.lng},${other.lat}` +
+            `?overview=full&geometries=geojson`;
 
         const res = await fetch(url);
         const data = await res.json();
