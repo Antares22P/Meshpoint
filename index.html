@@ -682,12 +682,19 @@
 (function(){
 "use strict";
 
+/* ================================================================
+   FIREBASE CONFIG — fill this in ONCE with your own project's
+   values (console.firebase.google.com → Project settings → your
+   web app → SDK config). Realtime Database must be enabled.
+   This is baked into the code so nobody using the app ever has
+   to see or type it.
+   ================================================================ */
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCHgOG2uCJG9m9PXA3n5PdChbgGcZOJlpY",
-  authDomain: "orbitfriends.firebaseapp.com",
-  databaseURL: "https://orbitfriends-default-rtdb.firebaseio.com",
-  projectId: "orbitfriends",
-  appId: "1:823489446142:web:66bfa05d2d095a61ce65af"
+  apiKey: "AIzaSyCW0DasqEJk7GVmQDJbxNeVO-LDWmni_RA",
+  authDomain: "orbitpoint-c9ee5.firebaseapp.com",
+  databaseURL: "https://orbitpoint-c9ee5-default-rtdb.firebaseio.com",
+  projectId: "orbitpoint-c9ee5",
+  appId: "1:377856134157:web:6fb2d2fe8d10cc5f261944"
 };
 
 /* ================= CONSTANTS ================= */
@@ -700,10 +707,16 @@ const ARRIVAL_RADIUS_M = 30;     // considered "arrived" within this many meters
 const MARKER_ANIM_MS = 550;      // smooth glide duration between position fixes
 const WALK_SPEED_MPS = 1.35;     // ~4.9 km/h, used for ETA fallback
 const LINK_CONNECT_M = 50;       // members auto-"link" once within this range
-const LINK_BREAK_M = 75;  // link breaks once further than this (hysteresis avoids flicker)
-let osrmRoute = null;
-let osrmRouteLine = null;
-let osrmTimer = null;
+const LINK_BREAK_M = 75;         // link breaks once further than this (hysteresis avoids flicker)
+
+/* ---- OSRM routing (shortest walkable path member → destination) ----
+   Uses the public FOSSGIS foot-profile OSRM demo server. It's free but
+   rate-limited and not for heavy production traffic — swap OSRM_BASE_URL
+   for your own hosted OSRM instance if you outgrow it. */
+const OSRM_BASE_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/';
+const ROUTE_REFRESH_MS = 15000;   // don't re-query more often than this per member
+const ROUTE_REFRESH_DIST_M = 25;  // ...unless they've moved at least this far
+const ROUTE_FETCH_TIMEOUT_MS = 8000;
 
 let state = {
   firebaseConfig: FIREBASE_CONFIG, groupId:null, groupName:null,
@@ -716,72 +729,11 @@ let state = {
   pickingDestination:false, followMe:false, muted:false,
   celebrated:{}, tileLayer:null, mapStyle:'dark', accuracyCircle:null,
   statsEl:null,
-  links:{}, linksSeeded:false, linkedMemberIds:new Set(), linkHubs:{}
+  links:{}, linksSeeded:false, linkedMemberIds:new Set(), linkHubs:{},
+  destRoutes:{} // id -> {latlngs, distance, duration, fetchedAt, originLat, originLng, destLat, destLng, fetching, ok}
 };
 
 /* ================= UTIL ================= */
-
-async function updateOSRMRoute(memberId){
-    const me = state.members[state.myId];
-    const other = state.members[memberId];
-
-    if(!me || !other) return;
-
-    try{
-        const url =
-            `https://router.project-osrm.org/route/v1/driving/` +
-            `${me.lng},${me.lat};${other.lng},${other.lat}` +
-            `?overview=full&geometries=geojson`;
-
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if(!data.routes || !data.routes.length) return;
-
-        const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
-
-        if(osrmRouteLine)
-            state.map.removeLayer(osrmRouteLine);
-
-        osrmRouteLine = L.polyline(coords,{
-            color:"#00e5ff",
-            weight:5,
-            opacity:0.9
-        }).addTo(state.map);
-
-    }catch(e){
-        console.log(e);
-    }
-}
-
-
-  function startNavigation(memberId){
-
-    selectedMemberId = memberId;
-
-    updateOSRMRoute(memberId);
-
-    clearInterval(osrmTimer);
-
-    osrmTimer = setInterval(()=>{
-        updateOSRMRoute(memberId);
-    },10000);
-
-}
-
-
-  function stopNavigation(){
-
-    clearInterval(osrmTimer);
-    osrmTimer = null;
-
-    if(osrmRouteLine){
-        state.map.removeLayer(osrmRouteLine);
-        osrmRouteLine = null;
-    }
-
-}
-  
 function toast(msg, type){
   const wrap = document.getElementById('toast-wrap');
   const el = document.createElement('div');
@@ -832,6 +784,14 @@ function genMemberId(){
 function fmtEta(meters, speedMps){
   const speed = (speedMps && speedMps > 0.3) ? speedMps : WALK_SPEED_MPS;
   const secs = meters / speed;
+  if(secs < 60) return '<1 min';
+  const mins = Math.round(secs/60);
+  if(mins < 60) return mins + ' min';
+  const h = Math.floor(mins/60), m = mins%60;
+  return h + 'h ' + m + 'm';
+}
+function fmtDuration(secs){
+  if(secs == null || isNaN(secs)) return '—';
   if(secs < 60) return '<1 min';
   const mins = Math.round(secs/60);
   if(mins < 60) return mins + ' min';
@@ -1206,10 +1166,12 @@ function onMapClick(e){
 function setMyDestination(lat, lng){
   state.destRef.child(state.myId).set({ lat, lng, setAt: Date.now() });
   delete state.celebrated[state.myId];
+  delete state.destRoutes[state.myId]; // force a fresh route for the new pin
 }
 function clearMyDestination(){
   state.destRef.child(state.myId).remove();
   delete state.celebrated[state.myId];
+  delete state.destRoutes[state.myId];
 }
 
 function buildMarkerHtml(id, m, isMe){
@@ -1421,6 +1383,64 @@ function renderLines(){
   }
 }
 
+/* ================= OSRM ROUTING ================= */
+
+// Decide whether a member's cached route to their destination is stale
+// enough to warrant a fresh OSRM lookup.
+function shouldRefreshRoute(id, originLat, originLng, destLat, destLng){
+  const cache = state.destRoutes[id];
+  if(!cache) return true;
+  if(cache.fetching) return false;
+  // destination changed → always refresh
+  if(cache.destLat !== destLat || cache.destLng !== destLng) return true;
+  const elapsed = Date.now() - cache.fetchedAt;
+  if(elapsed < ROUTE_REFRESH_MS) return false;
+  const moved = haversine(cache.originLat, cache.originLng, originLat, originLng);
+  return moved >= ROUTE_REFRESH_DIST_M;
+}
+
+// Fetch the shortest walkable path between a member and their destination
+// from OSRM, decode the GeoJSON geometry into Leaflet latlngs, and cache it.
+async function fetchOsrmRoute(id, originLat, originLng, destLat, destLng){
+  const prior = state.destRoutes[id];
+  state.destRoutes[id] = Object.assign({}, prior, {
+    fetching:true, originLat, originLng, destLat, destLng
+  });
+
+  const url = `${OSRM_BASE_URL}${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+  const controller = new AbortController();
+  const timeout = setTimeout(()=> controller.abort(), ROUTE_FETCH_TIMEOUT_MS);
+
+  try{
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if(!res.ok) throw new Error('OSRM HTTP ' + res.status);
+    const data = await res.json();
+    if(data.code === 'Ok' && data.routes && data.routes[0]){
+      const route = data.routes[0];
+      const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
+      state.destRoutes[id] = {
+        latlngs, distance: route.distance, duration: route.duration,
+        fetchedAt: Date.now(), originLat, originLng, destLat, destLng,
+        fetching:false, ok:true
+      };
+    } else {
+      state.destRoutes[id] = {
+        fetchedAt: Date.now(), originLat, originLng, destLat, destLng,
+        fetching:false, ok:false
+      };
+    }
+  }catch(e){
+    clearTimeout(timeout);
+    console.warn('OSRM route fetch failed for', id, e);
+    state.destRoutes[id] = Object.assign({}, state.destRoutes[id], {
+      fetching:false, ok:false, fetchedAt:Date.now(), originLat, originLng, destLat, destLng
+    });
+  }
+  // route arrived asynchronously — repaint destination lines/labels with it
+  renderDestinations();
+}
+
 function renderDestinations(){
   const seen = new Set();
   Object.entries(state.destinations).forEach(([id, d])=>{
@@ -1446,25 +1466,40 @@ function renderDestinations(){
       });
     }
 
-    // line + distance/eta from member to their destination
+    // line + distance/eta from member to their destination — follows the
+    // actual shortest walkable path via OSRM when a route is available,
+    // falling back to a straight line while it loads or if OSRM fails.
     if(state.destLines[id]) state.map.removeLayer(state.destLines[id]);
     if(state.destLabels[id]) state.map.removeLayer(state.destLabels[id]);
     if(m.lat != null){
-      state.destLines[id] = L.polyline([[m.lat,m.lng],[d.lat,d.lng]], {
-        color, weight:2, opacity:0.55, dashArray:'2,7'
+      if(shouldRefreshRoute(id, m.lat, m.lng, d.lat, d.lng)){
+        fetchOsrmRoute(id, m.lat, m.lng, d.lat, d.lng);
+      }
+
+      const routeCache = state.destRoutes[id];
+      const hasRoute = routeCache && routeCache.ok && routeCache.latlngs && routeCache.latlngs.length > 1
+        && routeCache.destLat === d.lat && routeCache.destLng === d.lng;
+
+      const pathLatLngs = hasRoute ? routeCache.latlngs : [[m.lat,m.lng],[d.lat,d.lng]];
+      const routeDist = hasRoute ? routeCache.distance : haversine(m.lat, m.lng, d.lat, d.lng);
+      const etaLabel = hasRoute ? fmtDuration(routeCache.duration) : fmtEta(routeDist, m.speed);
+      const routeIcon = hasRoute ? '🚶' : '🎯';
+
+      state.destLines[id] = L.polyline(pathLatLngs, {
+        color, weight: hasRoute ? 3.5 : 2, opacity: hasRoute ? 0.75 : 0.55,
+        dashArray: hasRoute ? null : '2,7', lineJoin:'round'
       }).addTo(state.map);
 
-      const dist = haversine(m.lat, m.lng, d.lat, d.lng);
-      const midLat = (m.lat+d.lat)/2, midLng = (m.lng+d.lng)/2;
-      state.destLabels[id] = L.marker([midLat, midLng], {
-        icon: L.divIcon({ html:`<div class="dist-chip" style="border-color:${color}88; color:${color};">🎯 ${fmtDist(dist)} · ${fmtEta(dist, m.speed)}</div>`, className:'', iconSize:[0,0] }),
+      const midPoint = pathLatLngs[Math.floor(pathLatLngs.length/2)];
+      state.destLabels[id] = L.marker(midPoint, {
+        icon: L.divIcon({ html:`<div class="dist-chip" style="border-color:${color}88; color:${color};">${routeIcon} ${fmtDist(routeDist)} · ${etaLabel}</div>`, className:'', iconSize:[0,0] }),
         interactive:false
       }).addTo(state.map);
 
-      // arrival detection
-      state.prevDestDist = state.prevDestDist || {};
-      state.prevDestDist[id] = dist;
-      if(dist <= ARRIVAL_RADIUS_M && !state.celebrated[id]){
+      // arrival detection uses straight-line proximity to the pin itself,
+      // independent of whatever the routed path distance says
+      const straightDist = haversine(m.lat, m.lng, d.lat, d.lng);
+      if(straightDist <= ARRIVAL_RADIUS_M && !state.celebrated[id]){
         state.celebrated[id] = true;
         toast(`🎉 ${m.name || 'A member'} arrived at their destination!`, 'success');
         burstConfetti();
@@ -1479,6 +1514,7 @@ function renderDestinations(){
       if(state.destLines[id]){ state.map.removeLayer(state.destLines[id]); delete state.destLines[id]; }
       if(state.destLabels[id]){ state.map.removeLayer(state.destLabels[id]); delete state.destLabels[id]; }
       delete state.celebrated[id];
+      delete state.destRoutes[id];
     }
   });
 }
@@ -1541,10 +1577,15 @@ function renderSidebar(){
     const dest = state.destinations[id];
     let destHtml = '';
     if(dest && dest.lat != null){
-      const dd = haversine(m.lat, m.lng, dest.lat, dest.lng);
+      const routeCache = state.destRoutes[id];
+      const hasRoute = routeCache && routeCache.ok && routeCache.latlngs
+        && routeCache.destLat === dest.lat && routeCache.destLng === dest.lng;
+      const dd = hasRoute ? routeCache.distance : haversine(m.lat, m.lng, dest.lat, dest.lng);
+      const eta = hasRoute ? fmtDuration(routeCache.duration) : fmtEta(dd, m.speed);
+      const routeTag = hasRoute ? '🚶' : '🎯';
       destHtml = `
         <div class="dest-row">
-          <span>🎯 ${fmtDist(dd)} to go · ETA ${fmtEta(dd, m.speed)}</span>
+          <span>${routeTag} ${fmtDist(dd)} to go · ETA ${eta}</span>
           ${isMe ? `<span class="dest-clear" data-clear-dest="1">Clear</span>` : ''}
         </div>`;
     }
