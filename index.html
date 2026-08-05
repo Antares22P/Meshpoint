@@ -707,7 +707,10 @@ const ARRIVAL_RADIUS_M = 30;     // considered "arrived" within this many meters
 const MARKER_ANIM_MS = 550;      // smooth glide duration between position fixes
 const WALK_SPEED_MPS = 1.35;     // ~4.9 km/h, used for ETA fallback
 const LINK_CONNECT_M = 50;       // members auto-"link" once within this range
-const LINK_BREAK_M = 75;         // link breaks once further than this (hysteresis avoids flicker)
+const LINK_BREAK_M = 75;  // link breaks once further than this (hysteresis avoids flicker)
+let osrmRoute = null;
+let osrmRouteLine = null;
+let osrmTimer = null;
 
 let state = {
   firebaseConfig: FIREBASE_CONFIG, groupId:null, groupName:null,
@@ -724,6 +727,40 @@ let state = {
 };
 
 /* ================= UTIL ================= */
+
+async function updateOSRMRoute(memberId){
+    const me = state.members[state.myId];
+    const other = state.members[memberId];
+
+    if(!me || !other) return;
+
+    try{
+        const url =
+            `https://router.project-osrm.org/route/v1/driving/` +
+            `${me.lng},${me.lat};${other.lng},${other.lat}` +
+            `?overview=full&geometries=geojson`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if(!data.routes || !data.routes.length) return;
+
+        const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+        if(osrmRouteLine)
+            state.map.removeLayer(osrmRouteLine);
+
+        osrmRouteLine = L.polyline(coords,{
+            color:"#00e5ff",
+            weight:5,
+            opacity:0.9
+        }).addTo(state.map);
+
+    }catch(e){
+        console.log(e);
+    }
+}
+  
 function toast(msg, type){
   const wrap = document.getElementById('toast-wrap');
   const el = document.createElement('div');
